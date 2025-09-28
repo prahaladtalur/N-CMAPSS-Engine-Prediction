@@ -1,17 +1,17 @@
-Jet Engine Remaining Useful Life Prediction
+# Jet Engine Remaining Useful Life Prediction
 
-This project uses NASA’s C-MAPSS turbofan engine dataset to build predictive models (LSTM/RNN) that estimate the Remaining Useful Life (RUL) of jet engines. The goal is to enable predictive maintenance by identifying how many flight cycles remain before an engine requires servicing, based on multivariate time-series sensor data.
+This project uses NASA's **C-MAPSS turbofan engine dataset** to build predictive models (LSTM/RNN) that estimate the **Remaining Useful Life (RUL)** of jet engines. The goal is to enable predictive maintenance by identifying how many flight cycles remain before an engine requires servicing, based on multivariate time-series sensor data.
 
-Dataset
-	•	Primary Dataset: NASA C-MAPSS Turbofan Engine Data
-	•	Alternate sources:
-	•	Kaggle Dataset
-	•	PHM Society Archive
+## Dataset
+- **Primary Dataset**: [NASA C-MAPSS Turbofan Engine Data](https://ti.arc.nasa.gov/tech/dash/groups/pcoe/prognostic-data-repository/)
+- Alternate sources:
+  - [Kaggle Dataset](https://www.kaggle.com/datasets/behrad3d/nasa-cmaps)
+  - [PHM Society Archive](https://phm-datasets.s3.amazonaws.com/NASA/6.+Turbofan+Engine+Degradation+Simulation+Data+Set.zip)
 
-The dataset contains simulated sensor readings from jet engines under different operating conditions and fault scenarios. The task is framed as a time-series regression problem, where the model predicts RUL from sensor degradation patterns.
+The dataset contains simulated sensor readings from jet engines under different operating conditions and fault scenarios. The task is framed as a **time-series regression problem**, where the model predicts RUL from sensor degradation patterns.
 
-Project Structure
-
+## Project Structure
+```
 N-CMAPSS-Engine-Prediction/
 │
 ├── data/                     # Datasets
@@ -42,26 +42,28 @@ N-CMAPSS-Engine-Prediction/
 ├── pyproject.toml            # uv project config
 ├── README.md                 # Project documentation
 └── .gitignore                # Ignore datasets, logs, etc.
+```
 
-Setup
+## Setup
+This project uses [**uv**](https://github.com/astral-sh/uv) for environment and dependency management (instead of pip or conda).
 
-This project uses uv for environment and dependency management (instead of pip or conda).
-
-Installation
-
+### Installation
+```bash
 # Install uv if not already installed
 pip install uv
 
 # Sync environment
 uv sync
+```
 
-Running the project
-
+### Running the project
+```bash
 python main.py
+```
 
-Next Steps
-	•	Implement preprocessing pipeline (scaling, windowing, sequence creation).
-	•	Develop LSTM and RNN architectures.
-	•	Train models and evaluate using RMSE and other scoring functions.
+## Next Steps
+- Implement preprocessing pipeline (scaling, windowing, sequence creation).
+- Develop LSTM and RNN architectures.
+- Train models and evaluate using RMSE and other scoring functions.
 
-⸻
+---
