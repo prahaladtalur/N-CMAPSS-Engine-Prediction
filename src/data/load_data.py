@@ -57,7 +57,7 @@ def get_datasets(
     try:
         val_X, val_y = reader.load_split("val")
         val_pair = (val_X, val_y)
-    except:
+    except Exception:
         val_pair = None
         print("⚠️  No validation split available")
     

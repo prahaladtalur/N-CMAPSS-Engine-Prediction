@@ -1,0 +1,85 @@
+[project]
+name = "n-cmapss-engine-prediction"
+version = "0.1.0"
+description = "Jet Engine Remaining Useful Life Prediction using NASA C-MAPSS dataset"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "scikit-learn",
+    "tensorflow",
+    "rul-datasets>=0.17.0",
+    "h5py>=3.0.0",
+    "tqdm>=4.62.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+    "types-requests",
+    "types-PyYAML",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+# Black code formatter configuration
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | notebooks
+)/
+'''
+
+# MyPy type checker configuration
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+show_error_context = true
+
+# Per-module options
+[[tool.mypy.overrides]]
+module = [
+    "rul_datasets.*",
+    "tensorflow.*",
+    "keras.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
