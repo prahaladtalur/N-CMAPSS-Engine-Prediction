@@ -40,3 +40,7 @@
    .vscode/
    .idea/
    *.swp
+
+   # Environment variables
+   .env
+   .env.local

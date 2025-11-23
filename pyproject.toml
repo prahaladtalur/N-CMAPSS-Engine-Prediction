@@ -13,6 +13,8 @@ dependencies = [
     "rul-datasets>=0.17.0",
     "h5py>=3.0.0",
     "tqdm>=4.62.0",
+    "wandb>=0.15.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -77,6 +79,7 @@ module = [
     "rul_datasets.*",
     "tensorflow.*",
     "keras.*",
+    "wandb.*",
 ]
 ignore_missing_imports = true
 
