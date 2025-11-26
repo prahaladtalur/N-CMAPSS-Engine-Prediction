@@ -1,46 +1,52 @@
 # Data files
-   data/raw/*
-   data/processed/*
-   !data/raw/.gitkeep
-   !data/processed/.gitkeep
-   *.h5
-   *.hdf5
-   *.zip
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+*.h5
+*.hdf5
+*.zip
 
-   # Python
-   __pycache__/
-   *.py[cod]
-   *$py.class
-   *.so
-   .Python
-   env/
-   venv/
-   *.egg-info/
-   dist/
-   build/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
 
-   # Jupyter
-   .ipynb_checkpoints/
-   *.ipynb_checkpoints
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
 
-   # Models
-   models/saved/
-   *.pth
-   *.pt
+# Models
+models/saved/
+*.pth
+*.pt
 
-   # Logs
-   logs/
-   *.log
+# Logs
+logs/
+*.log
 
-   # OS
-   .DS_Store
-   Thumbs.db
+# OS
+.DS_Store
+Thumbs.db
 
-   # IDE
-   .vscode/
-   .idea/
-   *.swp
+# IDE
+.vscode/
+.idea/
+*.swp
 
-   # Environment variables
-   .env
-   .env.local
+# Environment variables
+.env
+.env.local
+
+# Results
+results/
+
+# Wandb
+wandb/
