@@ -61,6 +61,38 @@ uv sync
 python main.py
 ```
 
+## Visualization Capabilities
+
+This project includes comprehensive visualization tools for both data analysis and model evaluation:
+
+### Data Analysis Visualizations
+- **Sensor Degradation Analysis** - Visualize how sensors change as engines degrade
+- **Sensor Correlation Heatmap** - Identify which sensors are most predictive of failure
+- **Multi-Sensor Lifecycle Comparison** - Compare sensor behaviors side-by-side
+
+### Model Evaluation Visualizations
+- **RUL Trajectory Analysis** - Track predicted vs actual RUL over engine lifecycle
+- **Critical Zone Analysis** - Evaluate performance when engines are near failure
+- **Prediction Confidence** - Visualize uncertainty and confidence intervals
+- **Training History** - Loss and metrics over epochs
+- **Error Distribution** - Analyze prediction errors
+
+### Quick Start with Visualizations
+
+```bash
+# Run interactive visualization examples
+python example_visualizations.py
+
+# Or import specific visualizations in your code
+from src.utils.visualize import (
+    plot_sensor_degradation,
+    plot_critical_zone_analysis,
+    plot_rul_trajectory
+)
+```
+
+For detailed documentation on all visualization functions, see [VISUALIZATIONS.md](VISUALIZATIONS.md).
+
 ## Next Steps
 - Implement preprocessing pipeline (scaling, windowing, sequence creation).
 - Develop LSTM and RNN architectures.
