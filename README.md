@@ -61,6 +61,35 @@ uv sync
 python main.py
 ```
 
+## Model Architectures
+
+This project includes **13 state-of-the-art models** for RUL prediction with easy switching:
+
+### Available Models:
+- **RNN-based:** LSTM, BiLSTM, GRU, BiGRU, Attention-LSTM, ResNet-LSTM
+- **Convolutional:** TCN, WaveNet
+- **Hybrid:** CNN-LSTM, CNN-GRU, Inception-LSTM
+- **Attention:** Transformer
+- **Baseline:** MLP
+
+### Quick Start:
+
+```bash
+# List all available models
+python train_model.py --list-models
+
+# Train a single model
+python train_model.py --model lstm
+
+# Compare multiple models
+python train_model.py --compare --models lstm gru transformer
+
+# Get model recommendations
+python train_model.py --recommend
+```
+
+For detailed model selection guidance, see [MODEL_SELECTION.md](MODEL_SELECTION.md).
+
 ## Visualization Capabilities
 
 This project includes comprehensive visualization tools for both data analysis and model evaluation:
