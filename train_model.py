@@ -162,6 +162,13 @@ Examples:
         default=None,
         help="Maximum sequence length (default: None)",
     )
+    parser.add_argument(
+        "--loss",
+        type=str,
+        default="combined_rul",
+        choices=["mse", "phm_score", "weighted_mse", "asymmetric_mse", "combined_rul", "quantile_90"],
+        help="Loss function (default: combined_rul - recommended for RUL prediction)",
+    )
 
     # Wandb options
     parser.add_argument(
@@ -221,6 +228,10 @@ Examples:
     (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd)
     val_X, val_y = val_pair if val_pair else (None, None)
 
+    # Get loss function
+    from src.models.losses import get_loss_function
+    loss_function = get_loss_function(args.loss)
+
     # Training configuration
     config = {
         "units": args.units,
@@ -230,6 +241,7 @@ Examples:
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "max_sequence_length": args.max_seq_length,
+        "loss": loss_function,
     }
 
     # Compare mode

@@ -182,6 +182,7 @@ def train_model(
 
     # Build model
     print(f"\nBuilding {model_name} model...")
+    loss_func = config.get("loss", "mse")
     model = get_model(
         model_name,
         input_shape=input_shape,
@@ -189,7 +190,12 @@ def train_model(
         dense_units=config["dense_units"],
         dropout_rate=config["dropout_rate"],
         learning_rate=config["learning_rate"],
+        loss=loss_func,
     )
+
+    # Print loss function info
+    loss_name = loss_func if isinstance(loss_func, str) else loss_func.__name__
+    print(f"Loss function: {loss_name}")
 
     print("\nModel Architecture:")
     model.summary()

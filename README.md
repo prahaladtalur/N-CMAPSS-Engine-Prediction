@@ -90,6 +90,31 @@ python train_model.py --recommend
 
 For detailed model selection guidance, see [MODEL_SELECTION.md](MODEL_SELECTION.md).
 
+### Loss Functions for RUL Prediction
+
+The project includes **6 specialized loss functions** that emphasize accuracy where it matters most:
+
+- **combined_rul** ⭐ (default): Balances critical zone focus + asymmetric penalty
+- **phm_score**: Official PHM competition scoring
+- **weighted_mse**: Focus on critical zone (RUL < 30)
+- **asymmetric_mse**: Penalize under-prediction more (safety first)
+- **quantile_90**: Conservative estimates
+- **mse**: Standard baseline
+
+```bash
+# Use custom loss function
+python train_model.py --model transformer --loss combined_rul
+
+# Compare different loss functions
+python train_model.py --compare --models lstm gru --loss phm_score
+```
+
+**Why custom loss?** Standard MSE treats a 10-cycle error at RUL=200 the same as at RUL=20 (critical!). Our custom losses emphasize:
+1. Critical zone performance (low RUL values matter more)
+2. Asymmetric costs (under-prediction = catastrophic, over-prediction = just expensive)
+
+For detailed loss function documentation, see [LOSS_FUNCTIONS.md](LOSS_FUNCTIONS.md).
+
 ## Visualization Capabilities
 
 This project includes comprehensive visualization tools for both data analysis and model evaluation:

@@ -68,17 +68,32 @@ class BaseModel(ABC):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
+        **kwargs,
     ) -> keras.Model:
         """Build and compile the model."""
         pass
 
     @staticmethod
-    def compile_model(model: keras.Model, learning_rate: float) -> keras.Model:
-        """Compile model with standard settings."""
+    def compile_model(
+        model: keras.Model, learning_rate: float, loss="mse"
+    ) -> keras.Model:
+        """
+        Compile model with configurable loss function.
+
+        Args:
+            model: Keras model to compile
+            learning_rate: Learning rate for optimizer
+            loss: Loss function (string or callable)
+                  Options: "mse", "phm_score", "weighted_mse", "asymmetric_mse", "combined_rul"
+
+        Returns:
+            Compiled model
+        """
         optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
         model.compile(
             optimizer=optimizer,
-            loss="mse",
+            loss=loss,
             metrics=["mae", "mape"],
         )
         return model
@@ -95,6 +110,7 @@ class LSTMModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
     ) -> keras.Model:
         model = keras.Sequential(
             [
@@ -108,7 +124,7 @@ class LSTMModel(BaseModel):
                 layers.Dense(1, activation="linear"),
             ]
         )
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("bilstm")
@@ -122,6 +138,7 @@ class BiLSTMModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
     ) -> keras.Model:
         model = keras.Sequential(
             [
@@ -135,7 +152,7 @@ class BiLSTMModel(BaseModel):
                 layers.Dense(1, activation="linear"),
             ]
         )
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("gru")
@@ -149,6 +166,7 @@ class GRUModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
     ) -> keras.Model:
         model = keras.Sequential(
             [
@@ -162,7 +180,7 @@ class GRUModel(BaseModel):
                 layers.Dense(1, activation="linear"),
             ]
         )
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("bigru")
@@ -176,6 +194,7 @@ class BiGRUModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
     ) -> keras.Model:
         model = keras.Sequential(
             [
@@ -189,7 +208,7 @@ class BiGRUModel(BaseModel):
                 layers.Dense(1, activation="linear"),
             ]
         )
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 class AttentionLayer(layers.Layer):
@@ -236,6 +255,7 @@ class AttentionLSTMModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
     ) -> keras.Model:
         inputs = layers.Input(shape=input_shape)
 
@@ -254,7 +274,7 @@ class AttentionLSTMModel(BaseModel):
         outputs = layers.Dense(1, activation="linear")(x)
 
         model = keras.Model(inputs=inputs, outputs=outputs)
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 class TCNBlock(layers.Layer):
@@ -341,6 +361,7 @@ class TCNModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
         kernel_size: int = 3,
         num_layers: int = 4,
     ) -> keras.Model:
@@ -364,7 +385,7 @@ class TCNModel(BaseModel):
         outputs = layers.Dense(1, activation="linear")(x)
 
         model = keras.Model(inputs=inputs, outputs=outputs)
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("cnn_lstm")
@@ -378,6 +399,7 @@ class CNNLSTMModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
     ) -> keras.Model:
         model = keras.Sequential(
             [
@@ -397,7 +419,7 @@ class CNNLSTMModel(BaseModel):
                 layers.Dense(1, activation="linear"),
             ]
         )
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("transformer")
@@ -414,6 +436,7 @@ class TransformerModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
         num_heads: int = 4,
         num_layers: int = 2,
     ) -> keras.Model:
@@ -444,7 +467,7 @@ class TransformerModel(BaseModel):
         outputs = layers.Dense(1, activation="linear")(x)
 
         model = keras.Model(inputs=inputs, outputs=outputs)
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("resnet_lstm")
@@ -461,6 +484,7 @@ class ResNetLSTMModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
         num_layers: int = 3,
     ) -> keras.Model:
         inputs = layers.Input(shape=input_shape)
@@ -492,7 +516,7 @@ class ResNetLSTMModel(BaseModel):
         outputs = layers.Dense(1, activation="linear")(x)
 
         model = keras.Model(inputs=inputs, outputs=outputs)
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 class WaveNetBlock(layers.Layer):
@@ -582,6 +606,7 @@ class WaveNetModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
         kernel_size: int = 2,
         num_layers: int = 8,
     ) -> keras.Model:
@@ -605,7 +630,7 @@ class WaveNetModel(BaseModel):
         outputs = layers.Dense(1, activation="linear")(x)
 
         model = keras.Model(inputs=inputs, outputs=outputs)
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("mlp")
@@ -623,6 +648,7 @@ class MLPModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
         num_hidden_layers: int = 3,
     ) -> keras.Model:
         model = keras.Sequential([layers.Input(shape=input_shape)])
@@ -641,7 +667,7 @@ class MLPModel(BaseModel):
         model.add(layers.Dropout(dropout_rate))
         model.add(layers.Dense(1, activation="linear"))
 
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("cnn_gru")
@@ -658,6 +684,7 @@ class CNNGRUModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
     ) -> keras.Model:
         model = keras.Sequential(
             [
@@ -677,7 +704,7 @@ class CNNGRUModel(BaseModel):
                 layers.Dense(1, activation="linear"),
             ]
         )
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 @ModelRegistry.register("inception_lstm")
@@ -695,6 +722,7 @@ class InceptionLSTMModel(BaseModel):
         dense_units: int = 32,
         dropout_rate: float = 0.2,
         learning_rate: float = 0.001,
+        loss="mse",
     ) -> keras.Model:
         inputs = layers.Input(shape=input_shape)
 
@@ -730,12 +758,13 @@ class InceptionLSTMModel(BaseModel):
         outputs = layers.Dense(1, activation="linear")(x)
 
         model = keras.Model(inputs=inputs, outputs=outputs)
-        return BaseModel.compile_model(model, learning_rate)
+        return BaseModel.compile_model(model, learning_rate, loss)
 
 
 def get_model(
     model_name: str,
     input_shape: Tuple[int, int],
+    loss="mse",
     **kwargs,
 ) -> keras.Model:
     """
@@ -744,12 +773,25 @@ def get_model(
     Args:
         model_name: Name of the model (lstm, bilstm, gru, bigru, attention_lstm, tcn, cnn_lstm, transformer)
         input_shape: Shape of input data (timesteps, features)
+        loss: Loss function - "mse" (default), "phm_score", "weighted_mse", "asymmetric_mse", "combined_rul"
         **kwargs: Model-specific arguments (units, dense_units, dropout_rate, learning_rate)
 
     Returns:
         Compiled Keras model
+
+    Example:
+        # Use combined RUL loss (recommended for production)
+        model = get_model("transformer", (50, 14), loss="combined_rul", units=128)
+
+        # Use PHM competition scoring
+        model = get_model("lstm", (50, 14), loss="phm_score")
+
+        # Use custom loss function
+        from src.models.losses import weighted_mse_loss
+        custom_loss = weighted_mse_loss(critical_threshold=20, critical_weight=5.0)
+        model = get_model("gru", (50, 14), loss=custom_loss)
     """
-    return ModelRegistry.build(model_name, input_shape, **kwargs)
+    return ModelRegistry.build(model_name, input_shape, loss=loss, **kwargs)
 
 
 def list_available_models() -> list:
