@@ -1,7 +1,23 @@
 """
 Visualization orchestration for N-CMAPSS RUL prediction pipeline.
+
+This module provides both basic and advanced visualizations for:
+- Data analysis (sensor degradation, correlations, lifecycle patterns)
+- Model evaluation (RUL trajectories, critical zones, prediction confidence)
 """
-from src.utils.visualize import plot_rul_distribution, plot_sensor_time_series
+from src.utils.visualize import (
+    # Basic visualizations
+    plot_rul_distribution,
+    plot_sensor_time_series,
+    # Advanced data visualizations
+    plot_sensor_degradation,
+    plot_sensor_correlation_heatmap,
+    plot_multi_sensor_lifecycle,
+    # Advanced model visualizations
+    plot_rul_trajectory,
+    plot_critical_zone_analysis,
+    plot_prediction_confidence,
+)
 
 
 def visualize_rul_distributions(dev_y, test_y):
