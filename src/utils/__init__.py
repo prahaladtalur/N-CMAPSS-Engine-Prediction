@@ -1,6 +1,15 @@
 """Utility functions for visualization and metrics."""
 
 from src.utils.visualize import (
+    # Data Analysis Visualizations
+    plot_sensor_degradation,
+    plot_sensor_correlation_heatmap,
+    plot_multi_sensor_lifecycle,
+    # Model Evaluation Visualizations
+    plot_rul_trajectory,
+    plot_critical_zone_analysis,
+    plot_prediction_confidence,
+    # Basic Visualizations
     plot_rul_distribution,
     plot_sensor_time_series,
     visualize_dataset,
@@ -25,7 +34,15 @@ from src.utils.training_viz import (
 )
 
 __all__ = [
-    # Visualization
+    # Data Analysis Visualizations
+    "plot_sensor_degradation",
+    "plot_sensor_correlation_heatmap",
+    "plot_multi_sensor_lifecycle",
+    # Model Evaluation Visualizations
+    "plot_rul_trajectory",
+    "plot_critical_zone_analysis",
+    "plot_prediction_confidence",
+    # Basic Visualizations
     "plot_rul_distribution",
     "plot_sensor_time_series",
     "visualize_dataset",
@@ -38,7 +55,7 @@ __all__ = [
     "compute_all_metrics",
     "format_metrics",
     "compare_models",
-    # Training visualization
+    # Training Visualization
     "plot_training_history",
     "plot_predictions",
     "plot_error_distribution",

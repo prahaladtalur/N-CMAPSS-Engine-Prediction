@@ -1,6 +1,6 @@
 # Visualization Guide for RUL Prediction
 
-This guide covers all the visualization capabilities for the N-CMAPSS engine RUL prediction project.
+This guide covers all visualization capabilities for the N-CMAPSS engine RUL prediction project.
 
 ## Overview
 
@@ -11,13 +11,13 @@ The visualization toolkit is divided into two main categories:
 
 ## Installation
 
-Make sure you have all required dependencies:
+Install all required dependencies:
 
 ```bash
 uv sync
 ```
 
-The new visualization functions require:
+Required dependencies for visualization functions:
 - `seaborn>=0.12.0`
 - `scipy>=1.9.0`
 
@@ -25,7 +25,7 @@ The new visualization functions require:
 
 ```python
 from src.data.load_data import get_datasets
-from src.utils.visualize import (
+from src.utils import (
     plot_sensor_degradation,
     plot_sensor_correlation_heatmap,
     plot_rul_trajectory,
@@ -38,14 +38,14 @@ from src.utils.visualize import (
 # Analyze sensor degradation
 plot_sensor_degradation(dev_X, dev_y, unit_idx=0)
 
-# See which sensors correlate with RUL
+# Identify sensors correlated with RUL
 plot_sensor_correlation_heatmap(dev_X, dev_y)
 ```
 
 Or run the example script:
 
 ```bash
-python example_visualizations.py
+python scripts/example_visualizations.py
 ```
 
 ---
@@ -56,40 +56,40 @@ python example_visualizations.py
 
 **Purpose:** Visualize how sensor values change as engines degrade (RUL decreases).
 
-**Use Case:** Identify which sensors show clear degradation patterns over the engine lifecycle.
+**Use Case:** Identify sensors that show clear degradation patterns over the engine lifecycle.
 
 ```python
-from src.utils.visualize import plot_sensor_degradation
+from src.utils import plot_sensor_degradation
 
 plot_sensor_degradation(
     features=dev_X,
     labels=dev_y,
-    unit_idx=0,               # Which engine to analyze
-    sensor_indices=[0,1,2,3,4,5]  # Which sensors to plot
+    unit_idx=0,                    # Which engine to analyze
+    sensor_indices=[0, 1, 2, 3, 4, 5]  # Which sensors to plot
 )
 ```
 
 **What it shows:**
 - Scatter plots of sensor values vs. RUL for multiple sensors
 - Trend lines (polynomial fit) showing degradation patterns
-- Color gradient showing time progression
+- Color gradient indicating time progression
 - Individual subplots for each sensor
 
 **Key Insights:**
 - Sensors with strong trends are good predictors
-- Helps identify monotonic vs. non-monotonic degradation
+- Identifies monotonic vs. non-monotonic degradation patterns
 - Reveals which sensors are most informative
 
 ---
 
 ### 2. Sensor Correlation Heatmap
 
-**Purpose:** Identify which sensors are most correlated with RUL and with each other.
+**Purpose:** Identify sensors most correlated with RUL and with each other.
 
-**Use Case:** Feature selection, understanding sensor relationships, identifying redundant sensors.
+**Use Case:** Feature selection, understanding sensor relationships, and identifying redundant sensors.
 
 ```python
-from src.utils.visualize import plot_sensor_correlation_heatmap
+from src.utils import plot_sensor_correlation_heatmap
 
 plot_sensor_correlation_heatmap(
     features=dev_X,
@@ -119,7 +119,7 @@ plot_sensor_correlation_heatmap(
 **Use Case:** Visual comparison of degradation patterns across sensors.
 
 ```python
-from src.utils.visualize import plot_multi_sensor_lifecycle
+from src.utils import plot_multi_sensor_lifecycle
 
 plot_multi_sensor_lifecycle(
     features=dev_X,
@@ -131,7 +131,7 @@ plot_multi_sensor_lifecycle(
 
 **What it shows:**
 - Normalized sensor values (0-1 scale) for direct comparison
-- All sensors plotted on same axes
+- All sensors plotted on the same axes
 - RUL overlay (normalized) for reference
 - Full lifecycle from healthy to failure
 
@@ -148,10 +148,10 @@ plot_multi_sensor_lifecycle(
 
 **Purpose:** Visualize predicted vs. actual RUL over a specific engine's lifecycle.
 
-**Use Case:** Understand model performance for individual engines, identify where predictions fail.
+**Use Case:** Understand model performance for individual engines and identify where predictions fail.
 
 ```python
-from src.utils.visualize import plot_rul_trajectory
+from src.utils import plot_rul_trajectory
 
 plot_rul_trajectory(
     y_true=y_true,
@@ -170,7 +170,7 @@ plot_rul_trajectory(
 **Key Insights:**
 - When predictions become accurate
 - Over-prediction vs. under-prediction tendencies
-- Error patterns over lifecycle
+- Error patterns over the lifecycle
 - Performance in critical zones
 
 ---
@@ -179,10 +179,10 @@ plot_rul_trajectory(
 
 **Purpose:** Analyze model performance when engines are close to failure.
 
-**Use Case:** Most important metric for predictive maintenance - how well does the model predict imminent failure?
+**Use Case:** Most important metric for predictive maintenance—how well does the model predict imminent failure?
 
 ```python
-from src.utils.visualize import plot_critical_zone_analysis
+from src.utils import plot_critical_zone_analysis
 
 plot_critical_zone_analysis(
     y_true=y_true,
@@ -200,7 +200,7 @@ plot_critical_zone_analysis(
 
 **Key Insights:**
 - Model performance where it matters most (critical zone)
-- Whether model is more accurate in certain RUL ranges
+- Whether the model is more accurate in certain RUL ranges
 - Sample imbalance across zones
 - Detailed statistics (MAE, RMSE) per zone
 
@@ -210,10 +210,10 @@ plot_critical_zone_analysis(
 
 **Purpose:** Visualize prediction uncertainty and confidence.
 
-**Use Case:** Understand where the model is confident vs. uncertain, calibrate risk assessment.
+**Use Case:** Understand where the model is confident vs. uncertain, and calibrate risk assessment.
 
 ```python
-from src.utils.visualize import plot_prediction_confidence
+from src.utils import plot_prediction_confidence
 
 # Option 1: Error-based confidence (single model)
 plot_prediction_confidence(y_true=y_true, y_pred=y_pred)
@@ -323,7 +323,7 @@ create_evaluation_report(
 )
 
 # Then add custom visualizations
-from src.utils.visualize import plot_critical_zone_analysis
+from src.utils import plot_critical_zone_analysis
 plot_critical_zone_analysis(y_true, y_pred)
 ```
 
@@ -367,7 +367,7 @@ plot_predictions(y_true, y_pred, save_path='results/predictions.png')
 - Save figures incrementally instead of showing all
 
 **Q: Can't see degradation patterns**
-- Try different `unit_idx` values - some engines show clearer patterns
+- Try different `unit_idx` values—some engines show clearer patterns
 - Check if sensors are normalized/scaled properly
 - Use `plot_multi_sensor_lifecycle` with normalization
 
@@ -387,7 +387,7 @@ plot_predictions(y_true, y_pred, save_path='results/predictions.png')
 
 ### Critical Zone Analysis
 - **Lower error in critical zone** = Good! Model is accurate when it matters
-- **Higher error in critical zone** = Concerning - needs improvement
+- **Higher error in critical zone** = Concerning—needs improvement
 - **Accuracy ±10 cycles > 80%** = Good performance for maintenance planning
 
 ---
@@ -404,8 +404,8 @@ plot_predictions(y_true, y_pred, save_path='results/predictions.png')
 
 To add new visualizations:
 
-1. Add function to `src/utils/visualize.py`
-2. Update imports in `visualize.py`
+1. Add function to `src/utils/visualize.py` (for data/model analysis) or `src/utils/training_viz.py` (for training-specific)
+2. Export the function in `src/utils/__init__.py`
 3. Add example to `example_visualizations.py`
 4. Document in this guide
 

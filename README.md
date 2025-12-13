@@ -21,26 +21,35 @@ N-CMAPSS-Engine-Prediction/
 │
 ├── src/                      # Source code
 │   ├── data/                 # Data loading & preprocessing
-│   │   ├── load_data.py
-│   │   └── preprocess.py
+│   │   ├── __init__.py
+│   │   └── load_data.py
 │   │
 │   ├── models/               # Model architectures & training
-│   │   ├── lstm_model.py
-│   │   ├── rnn_model.py
-│   │   └── train.py
+│   │   ├── __init__.py
+│   │   ├── architectures.py  # All 13 model architectures
+│   │   ├── lstm_model.py     # Legacy LSTM model
+│   │   └── train.py          # Training pipeline
 │   │
-│   ├── utils/                # Utilities
-│   │   ├── metrics.py
-│   │   ├── visualization.py
-│   │   └── config.py
-│   │
-│   └── evaluate.py           # Evaluation script
+│   └── utils/                # Utilities
+│       ├── __init__.py
+│       ├── metrics.py        # Evaluation metrics
+│       ├── visualize.py      # Data & model visualizations
+│       └── training_viz.py   # Training visualizations
 │
-├── main.py                   # Main entry point to run pipeline
+├── scripts/                  # Example scripts
+│   └── example_visualizations.py  # Visualization examples
+│
+├── notebooks/                # Jupyter notebooks
+│   └── N_CMAPSS.ipynb
+│
+├── train_model.py            # Main training CLI (recommended)
+├── main.py                   # Convenience wrapper (calls train_model.py)
 ├── requirements.txt          # Dependencies
 ├── uv.lock                   # uv dependency lockfile
 ├── pyproject.toml            # uv project config
 ├── README.md                 # Project documentation
+├── MODEL_SELECTION.md        # Model selection guide
+├── VISUALIZATIONS.md         # Visualization guide
 └── .gitignore                # Ignore datasets, logs, etc.
 ```
 
@@ -58,7 +67,11 @@ uv sync
 
 ### Running the project
 ```bash
-python main.py
+# Recommended: Use train_model.py for full CLI features
+python train_model.py --model lstm
+
+# Or use main.py as a convenience wrapper
+python main.py --model lstm
 ```
 
 ## Model Architectures
