@@ -1,77 +1,109 @@
 # Jet Engine Remaining Useful Life Prediction
 
-This project uses NASA's **C-MAPSS turbofan engine dataset** to build predictive models (LSTM/RNN) that estimate the **Remaining Useful Life (RUL)** of jet engines. The goal is to enable predictive maintenance by identifying how many flight cycles remain before an engine requires servicing, based on multivariate time-series sensor data.
+This project uses NASA's **N-CMAPSS turbofan engine dataset** to build predictive models that estimate the **Remaining Useful Life (RUL)** of jet engines. The goal is to enable predictive maintenance by identifying how many flight cycles remain before an engine requires servicing, based on multivariate time-series sensor data.
 
 ## Dataset
-- **Primary Dataset**: [NASA C-MAPSS Turbofan Engine Data](https://ti.arc.nasa.gov/tech/dash/groups/pcoe/prognostic-data-repository/)
-- Alternate sources:
-  - [Kaggle Dataset](https://www.kaggle.com/datasets/behrad3d/nasa-cmaps)
-  - [PHM Society Archive](https://phm-datasets.s3.amazonaws.com/NASA/6.+Turbofan+Engine+Degradation+Simulation+Data+Set.zip)
+
+**Dataset**: NASA N-CMAPSS (New Commercial Modular Aero-Propulsion System Simulation)
+- Automatically downloaded via `rul-datasets` library
+- 7 sub-datasets (FD001-FD007) with different operating conditions and fault modes
+- Multivariate time-series sensor data with Remaining Useful Life (RUL) labels
 
 The dataset contains simulated sensor readings from jet engines under different operating conditions and fault scenarios. The task is framed as a **time-series regression problem**, where the model predicts RUL from sensor degradation patterns.
 
 ## Project Structure
+
 ```
 N-CMAPSS-Engine-Prediction/
 │
-├── data/                     # Datasets
-│   ├── raw/                  # Original raw data
-│   ├── processed/            # Preprocessed/cleaned data
-│   └── external/             # Additional/reference data
+├── train.py                  # Main training entry point
+├── visualize.py              # Data visualization entry point
 │
 ├── src/                      # Source code
-│   ├── data/                 # Data loading & preprocessing
+│   ├── data/                 # Data loading
 │   │   ├── __init__.py
-│   │   └── load_data.py
+│   │   └── loader.py         # Dataset loading utilities
 │   │
 │   ├── models/               # Model architectures & training
 │   │   ├── __init__.py
-│   │   ├── architectures.py  # All 13 model architectures
-│   │   ├── lstm_model.py     # Legacy LSTM model
-│   │   └── train.py          # Training pipeline
+│   │   ├── architectures.py  # 13 SOTA model architectures
+│   │   └── trainer.py        # Training pipeline
 │   │
-│   └── utils/                # Utilities
+│   ├── evaluation/           # Evaluation metrics
+│   │   ├── __init__.py
+│   │   └── metrics.py        # RUL-specific metrics
+│   │
+│   └── visualization/        # Visualization utilities
 │       ├── __init__.py
-│       ├── metrics.py        # Evaluation metrics
-│       ├── visualize.py      # Data & model visualizations
-│       └── training_viz.py   # Training visualizations
+│       ├── data_viz.py       # Data exploration visualizations
+│       └── model_viz.py      # Model evaluation visualizations
 │
-├── scripts/                  # Example scripts
-│   └── example_visualizations.py  # Visualization examples
+├── outputs/                  # All outputs (gitignored)
+│   ├── models/               # Saved models
+│   ├── figures/              # Generated visualizations
+│   └── logs/                 # Training logs
+│
+├── data/                     # Dataset (auto-downloaded)
+│   ├── raw/                  # Original N-CMAPSS data
+│   └── processed/            # Processed/cached data
 │
 ├── notebooks/                # Jupyter notebooks
 │   └── N_CMAPSS.ipynb
 │
-├── train_model.py            # Main training CLI (recommended)
-├── main.py                   # Convenience wrapper (calls train_model.py)
 ├── requirements.txt          # Dependencies
-├── uv.lock                   # uv dependency lockfile
-├── pyproject.toml            # uv project config
-├── README.md                 # Project documentation
-├── MODEL_SELECTION.md        # Model selection guide
-├── VISUALIZATIONS.md         # Visualization guide
-└── .gitignore                # Ignore datasets, logs, etc.
+├── pyproject.toml            # Project configuration
+└── README.md                 # This file
 ```
 
-## Setup
-This project uses [**uv**](https://github.com/astral-sh/uv) for environment and dependency management (instead of pip or conda).
+## Quick Start
 
 ### Installation
-```bash
-# Install uv if not already installed
-pip install uv
 
-# Sync environment
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Or use uv for faster installation
+pip install uv
 uv sync
 ```
 
-### Running the project
-```bash
-# Recommended: Use train_model.py for full CLI features
-python train_model.py --model lstm
+### Train a Model
 
-# Or use main.py as a convenience wrapper
-python main.py --model lstm
+```bash
+# Train a single model
+python train.py --model lstm
+
+# Train with custom configuration
+python train.py --model transformer --epochs 100 --units 128
+
+# Compare multiple models
+python train.py --compare --models lstm gru attention_lstm
+
+# Compare all available models
+python train.py --compare-all
+
+# List available models
+python train.py --list-models
+
+# Get model recommendations
+python train.py --recommend
+```
+
+### Visualize Data
+
+```bash
+# Visualize dataset (basic)
+python visualize.py --data --fd 1
+
+# Show all visualizations
+python visualize.py --data --all --fd 1
+
+# Visualize specific sensors
+python visualize.py --data --fd 1 --sensors 0 1 2 3
+
+# Visualize specific unit
+python visualize.py --data --fd 1 --unit 5
 ```
 
 ## Model Architectures
@@ -85,59 +117,110 @@ This project includes **13 state-of-the-art models** for RUL prediction with eas
 - **Attention:** Transformer
 - **Baseline:** MLP
 
-### Quick Start:
+### Model Recommendations:
 
-```bash
-# List all available models
-python train_model.py --list-models
+**For Best Accuracy:**
+- Attention-LSTM, Transformer, Inception-LSTM
 
-# Train a single model
-python train_model.py --model lstm
+**For Fast Training:**
+- MLP, GRU, LSTM
 
-# Compare multiple models
-python train_model.py --compare --models lstm gru transformer
+**For Long Sequences:**
+- TCN, WaveNet, Transformer
 
-# Get model recommendations
-python train_model.py --recommend
-```
+**For Limited Data:**
+- LSTM, GRU, BiGRU
 
 For detailed model selection guidance, see [MODEL_SELECTION.md](MODEL_SELECTION.md).
 
 ## Visualization Capabilities
 
-This project includes comprehensive visualization tools for both data analysis and model evaluation:
-
-### Data Analysis Visualizations
-- **Sensor Degradation Analysis** - Visualize how sensors change as engines degrade
-- **Sensor Correlation Heatmap** - Identify which sensors are most predictive of failure
-- **Multi-Sensor Lifecycle Comparison** - Compare sensor behaviors side-by-side
+### Data Exploration Visualizations
+- **RUL Distribution** - Understand label distribution across datasets
+- **Sensor Time Series** - Visualize sensor readings over time
+- **Sensor Degradation** - Analyze how sensors change as engines degrade
+- **Sensor Correlation** - Identify which sensors are most predictive
+- **Multi-Sensor Lifecycle** - Compare sensor behaviors side-by-side
 
 ### Model Evaluation Visualizations
-- **RUL Trajectory Analysis** - Track predicted vs actual RUL over engine lifecycle
-- **Critical Zone Analysis** - Evaluate performance when engines are near failure
-- **Prediction Confidence** - Visualize uncertainty and confidence intervals
 - **Training History** - Loss and metrics over epochs
+- **Predictions vs Actual** - Scatter plots and residual analysis
 - **Error Distribution** - Analyze prediction errors
-
-### Quick Start with Visualizations
-
-```bash
-# Run interactive visualization examples
-python example_visualizations.py
-
-# Or import specific visualizations in your code
-from src.utils.visualize import (
-    plot_sensor_degradation,
-    plot_critical_zone_analysis,
-    plot_rul_trajectory
-)
-```
+- **RUL Trajectory** - Track predicted vs actual RUL over lifecycle
+- **Critical Zone Analysis** - Performance when engines are near failure
+- **Model Comparison** - Compare multiple models side-by-side
 
 For detailed documentation on all visualization functions, see [VISUALIZATIONS.md](VISUALIZATIONS.md).
 
-## Next Steps
-- Implement preprocessing pipeline (scaling, windowing, sequence creation).
-- Develop LSTM and RNN architectures.
-- Train models and evaluate using RMSE and other scoring functions.
+## Usage Examples
+
+### Training Example
+
+```python
+from src.data.loader import get_datasets
+from src.models.trainer import train_model
+
+# Load data
+(dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=1)
+val_X, val_y = val_pair if val_pair else (None, None)
+
+# Train model
+model, history, metrics = train_model(
+    dev_X=dev_X,
+    dev_y=dev_y,
+    model_name="attention_lstm",
+    val_X=val_X,
+    val_y=val_y,
+    test_X=test_X,
+    test_y=test_y,
+    config={"epochs": 50, "batch_size": 32}
+)
+```
+
+### Visualization Example
+
+```python
+from src.data.loader import get_datasets
+from src.visualization.data_viz import (
+    plot_rul_distribution,
+    plot_sensor_degradation,
+    plot_sensor_correlation_heatmap
+)
+
+# Load data
+(dev_X, dev_y), _, (test_X, test_y) = get_datasets(fd=1)
+
+# Visualize data
+plot_rul_distribution(dev_y, split_name="Development Set")
+plot_sensor_degradation(dev_X, dev_y, unit_idx=0)
+plot_sensor_correlation_heatmap(dev_X, dev_y)
+```
+
+## Evaluation Metrics
+
+The project includes comprehensive evaluation metrics:
+
+- **Standard Metrics:** MSE, RMSE, MAE, MAPE, R²
+- **RUL-Specific:** PHM Score (asymmetric penalty for late predictions)
+- **Accuracy Metrics:** Percentage within ±10, ±15, ±20 cycles
+
+## Project Features
+
+✅ **13 State-of-the-Art Models** - Easy switching between architectures
+✅ **Comprehensive Visualizations** - Data exploration and model evaluation
+✅ **Wandb Integration** - Automatic experiment tracking
+✅ **Clean CLI Interface** - Simple commands for training and visualization
+✅ **Modular Architecture** - Well-organized, maintainable codebase
+✅ **RUL-Specific Metrics** - Industry-standard evaluation metrics
+
+## Contributing
+
+Feel free to open issues or submit pull requests for improvements!
+
+## License
+
+MIT License
 
 ---
+
+**Happy Predicting! 🚀**

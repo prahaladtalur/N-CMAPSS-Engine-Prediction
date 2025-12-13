@@ -14,7 +14,7 @@ import wandb
 from wandb.integration.keras import WandbCallback
 
 from src.models.architectures import ModelRegistry, get_model, list_available_models
-from src.utils.metrics import compute_all_metrics, format_metrics
+from src.evaluation.metrics import compute_all_metrics, format_metrics
 
 
 def prepare_sequences(
@@ -258,7 +258,7 @@ def train_model(
 
         # Generate visualizations if requested
         if visualize:
-            from src.utils.training_viz import (
+            from src.visualization.model_viz import (
                 plot_training_history,
                 plot_predictions,
                 plot_error_distribution,
@@ -267,7 +267,7 @@ def train_model(
             print("\nGenerating visualizations...")
 
             # Create results directory
-            results_dir = f"results/{run_name}"
+            results_dir = f"outputs/figures/{run_name}"
             os.makedirs(results_dir, exist_ok=True)
 
             # Plot training history
@@ -386,8 +386,8 @@ def compare_models(
 
     # Generate comparison visualization
     if test_X is not None:
-        from src.utils.training_viz import plot_model_comparison
-        from src.utils.metrics import compare_models as find_best_model
+        from src.visualization.model_viz import plot_model_comparison
+        from src.evaluation.metrics import compare_models as find_best_model
 
         metrics_only = {
             name: res["metrics"]
@@ -406,10 +406,10 @@ def compare_models(
             print(format_metrics(best_metrics))
 
             # Plot comparison
-            os.makedirs("results/comparison", exist_ok=True)
+            os.makedirs("outputs/figures/comparison", exist_ok=True)
             plot_model_comparison(
                 metrics_only,
-                save_path="results/comparison/model_comparison.png",
+                save_path="outputs/figures/comparison/model_comparison.png",
             )
 
     return results
@@ -455,7 +455,7 @@ def train_lstm(
 
 
 if __name__ == "__main__":
-    from src.data.load_data import get_datasets
+    from src.data.loader import get_datasets
 
     print("Available models:", list_available_models())
 

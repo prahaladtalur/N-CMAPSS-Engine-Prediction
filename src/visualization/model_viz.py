@@ -1,11 +1,11 @@
 """
-Training visualization utilities for model evaluation and comparison.
+Model evaluation and training visualizations for RUL prediction.
 """
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Dict, List, Optional, Any
-import os
+from typing import Dict, List, Optional
 
 
 def plot_training_history(
@@ -188,6 +188,215 @@ def plot_error_distribution(
     plt.show()
 
 
+def plot_rul_trajectory(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    unit_length: Optional[List[int]] = None,
+    unit_idx: int = 0,
+) -> None:
+    """
+    Plot the RUL trajectory for a specific engine unit over its lifecycle.
+
+    Shows how predicted RUL compares to actual RUL as the engine progresses
+    through its operational life.
+
+    Args:
+        y_true: True RUL values (flattened or per-unit)
+        y_pred: Predicted RUL values
+        unit_length: List of cycle counts per unit (if flattened data)
+        unit_idx: Which unit to visualize
+    """
+    if unit_length is not None:
+        # Extract specific unit from flattened data
+        start_idx = sum(unit_length[:unit_idx])
+        end_idx = start_idx + unit_length[unit_idx]
+        y_true_unit = y_true[start_idx:end_idx]
+        y_pred_unit = y_pred[start_idx:end_idx]
+    else:
+        y_true_unit = y_true
+        y_pred_unit = y_pred
+
+    cycles = np.arange(len(y_true_unit))
+
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+
+    # Top plot: RUL over time
+    axes[0].plot(cycles, y_true_unit, 'b-', linewidth=2.5, label='Actual RUL', alpha=0.8)
+    axes[0].plot(cycles, y_pred_unit, 'r--', linewidth=2, label='Predicted RUL', alpha=0.8)
+    axes[0].fill_between(cycles, y_true_unit, y_pred_unit, alpha=0.2, color='gray', label='Error')
+
+    # Add critical zones
+    axes[0].axhspan(0, 30, alpha=0.1, color='red', label='Critical Zone (<30 cycles)')
+    axes[0].axhspan(30, 75, alpha=0.1, color='orange', label='Warning Zone (30-75 cycles)')
+
+    axes[0].set_xlabel("Cycle Number", fontsize=12)
+    axes[0].set_ylabel("RUL (cycles)", fontsize=12)
+    axes[0].set_title(f"Unit {unit_idx} - RUL Trajectory Over Lifecycle",
+                     fontsize=14, fontweight="bold")
+    axes[0].legend(loc="best", fontsize=10)
+    axes[0].grid(alpha=0.3)
+
+    # Bottom plot: Prediction error over time
+    error = y_pred_unit - y_true_unit
+    axes[1].plot(cycles, error, 'purple', linewidth=2, alpha=0.7)
+    axes[1].axhline(y=0, color='black', linestyle='--', linewidth=1.5)
+    axes[1].fill_between(cycles, 0, error, where=(error >= 0), alpha=0.3, color='red',
+                         label='Over-prediction', interpolate=True)
+    axes[1].fill_between(cycles, 0, error, where=(error < 0), alpha=0.3, color='blue',
+                         label='Under-prediction', interpolate=True)
+
+    axes[1].set_xlabel("Cycle Number", fontsize=12)
+    axes[1].set_ylabel("Prediction Error (cycles)", fontsize=12)
+    axes[1].set_title(f"Unit {unit_idx} - Prediction Error Over Time",
+                     fontsize=14, fontweight="bold")
+    axes[1].legend(loc="best", fontsize=10)
+    axes[1].grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Statistics
+    mae = np.mean(np.abs(error))
+    rmse = np.sqrt(np.mean(error**2))
+
+    print(f"\nUnit {unit_idx} Trajectory Statistics:")
+    print(f"  Total cycles: {len(cycles)}")
+    print(f"  Mean Absolute Error: {mae:.2f} cycles")
+    print(f"  RMSE: {rmse:.2f} cycles")
+    print(f"  Max over-prediction: {error.max():.2f} cycles")
+    print(f"  Max under-prediction: {error.min():.2f} cycles")
+
+
+def plot_critical_zone_analysis(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    critical_threshold: int = 30,
+    warning_threshold: int = 75,
+) -> None:
+    """
+    Analyze model performance in critical RUL zones.
+
+    Shows how well the model performs when engines are close to failure,
+    which is the most important regime for maintenance decisions.
+
+    Args:
+        y_true: True RUL values
+        y_pred: Predicted RUL values
+        critical_threshold: RUL threshold for critical zone
+        warning_threshold: RUL threshold for warning zone
+    """
+    # Define zones
+    critical_mask = y_true < critical_threshold
+    warning_mask = (y_true >= critical_threshold) & (y_true < warning_threshold)
+    safe_mask = y_true >= warning_threshold
+
+    zones = {
+        'Critical (RUL < 30)': critical_mask,
+        'Warning (30 ≤ RUL < 75)': warning_mask,
+        'Safe (RUL ≥ 75)': safe_mask
+    }
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+
+    # 1. Error distribution by zone
+    ax = axes[0, 0]
+    zone_errors = []
+    zone_labels = []
+    colors = ['red', 'orange', 'green']
+
+    for (zone_name, mask), color in zip(zones.items(), colors):
+        if mask.sum() > 0:
+            errors = y_pred[mask] - y_true[mask]
+            zone_errors.append(errors)
+            zone_labels.append(zone_name)
+
+    bp = ax.boxplot(zone_errors, labels=zone_labels, patch_artist=True,
+                    medianprops=dict(color="black", linewidth=2))
+    for patch, color in zip(bp['boxes'], colors[:len(zone_errors)]):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.6)
+
+    ax.axhline(y=0, color='black', linestyle='--', linewidth=1.5, alpha=0.7)
+    ax.set_ylabel("Prediction Error (cycles)", fontsize=11)
+    ax.set_title("Error Distribution by RUL Zone", fontsize=12, fontweight="bold")
+    ax.grid(alpha=0.3, axis='y')
+
+    # 2. Accuracy in each zone
+    ax = axes[0, 1]
+    zone_names = []
+    accuracies_10 = []
+    accuracies_20 = []
+    accuracies_30 = []
+
+    for zone_name, mask in zones.items():
+        if mask.sum() > 0:
+            errors = np.abs(y_pred[mask] - y_true[mask])
+            zone_names.append(zone_name.split('(')[0].strip())
+            accuracies_10.append(100 * np.mean(errors <= 10))
+            accuracies_20.append(100 * np.mean(errors <= 20))
+            accuracies_30.append(100 * np.mean(errors <= 30))
+
+    x = np.arange(len(zone_names))
+    width = 0.25
+
+    ax.bar(x - width, accuracies_10, width, label='±10 cycles', color='darkgreen', alpha=0.8)
+    ax.bar(x, accuracies_20, width, label='±20 cycles', color='lightgreen', alpha=0.8)
+    ax.bar(x + width, accuracies_30, width, label='±30 cycles', color='palegreen', alpha=0.8)
+
+    ax.set_ylabel("Accuracy (%)", fontsize=11)
+    ax.set_title("Prediction Accuracy by Zone", fontsize=12, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(zone_names)
+    ax.legend(loc="best", fontsize=9)
+    ax.grid(alpha=0.3, axis='y')
+
+    # 3. Sample distribution across zones
+    ax = axes[1, 0]
+    zone_counts = [mask.sum() for mask in zones.values()]
+    zone_names_full = list(zones.keys())
+    colors_full = ['red', 'orange', 'green']
+
+    wedges, texts, autotexts = ax.pie(zone_counts, labels=zone_names_full, autopct='%1.1f%%',
+                                       colors=colors_full, startangle=90)
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontsize(10)
+        autotext.set_fontweight('bold')
+
+    ax.set_title("Sample Distribution Across Zones", fontsize=12, fontweight="bold")
+
+    # 4. Scatter plot colored by zone
+    ax = axes[1, 1]
+    for (zone_name, mask), color in zip(zones.items(), colors):
+        if mask.sum() > 0:
+            ax.scatter(y_true[mask], y_pred[mask], alpha=0.5, s=20,
+                      c=color, label=zone_name)
+
+    max_val = max(y_true.max(), y_pred.max())
+    ax.plot([0, max_val], [0, max_val], 'k--', linewidth=2, alpha=0.7, label='Perfect Prediction')
+
+    ax.set_xlabel("True RUL", fontsize=11)
+    ax.set_ylabel("Predicted RUL", fontsize=11)
+    ax.set_title("Predictions by Zone", fontsize=12, fontweight="bold")
+    ax.legend(loc="best", fontsize=9)
+    ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Print statistics
+    print("\nCritical Zone Analysis:")
+    for zone_name, mask in zones.items():
+        if mask.sum() > 0:
+            errors = np.abs(y_pred[mask] - y_true[mask])
+            print(f"\n{zone_name}:")
+            print(f"  Samples: {mask.sum()}")
+            print(f"  MAE: {errors.mean():.2f} cycles")
+            print(f"  RMSE: {np.sqrt(np.mean((y_pred[mask] - y_true[mask])**2)):.2f} cycles")
+            print(f"  Accuracy (±10 cycles): {100 * np.mean(errors <= 10):.1f}%")
+            print(f"  Accuracy (±20 cycles): {100 * np.mean(errors <= 20):.1f}%")
+
+
 def plot_model_comparison(
     results: Dict[str, Dict[str, float]],
     metrics: List[str] = None,
@@ -303,7 +512,7 @@ def create_evaluation_report(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     history: Dict[str, List[float]] = None,
-    save_dir: str = "results",
+    save_dir: str = "outputs/figures",
 ) -> None:
     """
     Create a comprehensive evaluation report with all visualizations.
@@ -323,7 +532,7 @@ def create_evaluation_report(
     print("=" * 60)
 
     # Print metrics
-    from src.utils.metrics import format_metrics
+    from src.evaluation.metrics import format_metrics
 
     print(format_metrics(metrics))
 

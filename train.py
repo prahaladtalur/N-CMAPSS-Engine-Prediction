@@ -1,32 +1,31 @@
 #!/usr/bin/env python
 """
-Easy CLI for training and comparing RUL prediction models.
+Train RUL prediction models on N-CMAPSS dataset.
 
 Usage examples:
     # Train a single model
-    python train_model.py --model lstm
+    python train.py --model lstm
 
-    # Train with custom config
-    python train_model.py --model transformer --epochs 100 --units 128
+    # Train with custom configuration
+    python train.py --model transformer --epochs 100 --units 128
 
     # Compare multiple models
-    python train_model.py --compare --models lstm gru attention_lstm
+    python train.py --compare --models lstm gru attention_lstm
 
-    # Compare all models
-    python train_model.py --compare-all
+    # Compare all available models
+    python train.py --compare-all
 
     # List available models
-    python train_model.py --list-models
+    python train.py --list-models
 
     # Get model recommendations
-    python train_model.py --recommend
+    python train.py --recommend
 """
 
 import argparse
 import sys
-from typing import List, Optional
-from src.data.load_data import get_datasets
-from src.models.train import train_model, compare_models
+from src.data.loader import get_datasets
+from src.models.trainer import train_model, compare_models
 from src.models.architectures import (
     list_available_models,
     get_model_info,
@@ -92,22 +91,22 @@ def main():
         epilog="""
 Examples:
   # Train a single model
-  python train_model.py --model lstm
+  python train.py --model lstm
 
   # Train with custom configuration
-  python train_model.py --model transformer --epochs 100 --units 128
+  python train.py --model transformer --epochs 100 --units 128
 
   # Compare specific models
-  python train_model.py --compare --models lstm gru transformer
+  python train.py --compare --models lstm gru transformer
 
   # Compare all available models
-  python train_model.py --compare-all
+  python train.py --compare-all
 
   # List all available models
-  python train_model.py --list-models
+  python train.py --list-models
 
   # Get model recommendations
-  python train_model.py --recommend
+  python train.py --recommend
         """,
     )
 
@@ -260,7 +259,7 @@ Examples:
         print("\n" + "=" * 80)
         print("COMPARISON COMPLETE!")
         print("=" * 80)
-        print(f"\nResults saved to: results/comparison/")
+        print(f"\nResults saved to: outputs/figures/comparison/")
         print(f"Check wandb project: {args.project}-comparison")
 
     # Single model mode
@@ -291,13 +290,13 @@ Examples:
         print("=" * 80)
 
         if metrics:
-            from src.utils.metrics import format_metrics
+            from src.evaluation.metrics import format_metrics
 
             print("\nTest Set Metrics:")
             print(format_metrics(metrics))
 
         run_name = args.run_name or f"{model_name}-run"
-        print(f"\nResults saved to: results/{run_name}/")
+        print(f"\nResults saved to: outputs/figures/{run_name}/")
         print(f"Check wandb project: {args.project}")
 
 
