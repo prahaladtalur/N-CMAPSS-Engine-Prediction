@@ -210,9 +210,10 @@ def train_model(
     callbacks = [
         WandbCallback(
             monitor="val_loss" if validation_data else "loss",
-            log_weights=True,
-            log_gradients=True,
-            save_model=True,
+            log_weights=False,
+            log_gradients=False,
+            save_model=False,
+            save_graph=False,
         ),
         keras.callbacks.EarlyStopping(
             monitor="val_loss" if validation_data else "loss",

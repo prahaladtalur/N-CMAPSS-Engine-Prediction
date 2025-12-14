@@ -529,5 +529,3 @@ python scripts/example_visualizations.py
 
 **Happy Training! 🚀**
 
-For questions or issues, check the main [README.md](README.md) or open an issue.
-
