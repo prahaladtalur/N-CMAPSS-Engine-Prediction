@@ -77,7 +77,7 @@ install-dev: check
 # Run the main pipeline
 run: check
 	@echo "Running N-CMAPSS pipeline..."
-	$(PYTHON_VENV) main.py
+	$(PYTHON_VENV) train_model.py
 
 # Download and prepare N-CMAPSS dataset (FD001 by default)
 data: check
@@ -135,7 +135,7 @@ test: check
 lint: check
 	@echo "Running black (check mode)..."
 	@if $(PIP_VENV) show black > /dev/null 2>&1; then \
-		$(PYTHON_VENV) -m black --check --diff src/ main.py; \
+		$(PYTHON_VENV) -m black --check --diff src/ train_model.py; \
 	else \
 		echo "❌ black not installed. Install with: make install-dev"; \
 		exit 1; \
@@ -145,7 +145,7 @@ lint: check
 format: check
 	@echo "Formatting code with black..."
 	@if $(PIP_VENV) show black > /dev/null 2>&1; then \
-		$(PYTHON_VENV) -m black src/ main.py; \
+		$(PYTHON_VENV) -m black src/ train_model.py; \
 		echo "✓ Code formatted with black"; \
 	else \
 		echo "❌ black not installed. Install with: make install-dev"; \
@@ -156,7 +156,7 @@ format: check
 typecheck: check
 	@echo "Running mypy type checker..."
 	@if $(PIP_VENV) show mypy > /dev/null 2>&1; then \
-		$(PYTHON_VENV) -m mypy src/ main.py; \
+		$(PYTHON_VENV) -m mypy src/ train_model.py; \
 	else \
 		echo "❌ mypy not installed. Install with: make install-dev"; \
 		exit 1; \

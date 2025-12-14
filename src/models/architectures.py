@@ -10,7 +10,7 @@ Includes SOTA RNN architectures:
 - Temporal Convolutional Network (TCN)
 """
 
-from typing import Tuple, Dict, Any, Callable, Optional
+from typing import Tuple, Dict, Any, Optional
 from abc import ABC, abstractmethod
 import tensorflow as tf
 from tensorflow import keras
@@ -193,18 +193,26 @@ class BiGRUModel(BaseModel):
 
 
 class AttentionLayer(layers.Layer):
-    """Custom attention layer for sequence models."""
+    """
+    Custom attention layer for sequence models.
+    
+    Implements a simple additive attention mechanism that learns to focus on
+    important timesteps in the input sequence. The attention weights are computed
+    using a learned linear transformation followed by tanh activation and softmax.
+    """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def build(self, input_shape):
+        # Learnable attention weights: (feature_dim, 1) for scoring each feature
         self.W = self.add_weight(
             name="attention_weight",
             shape=(input_shape[-1], 1),
             initializer="glorot_uniform",
             trainable=True,
         )
+        # Learnable bias: (sequence_length, 1) for position-dependent scoring
         self.b = self.add_weight(
             name="attention_bias",
             shape=(input_shape[1], 1),
@@ -214,10 +222,13 @@ class AttentionLayer(layers.Layer):
         super().build(input_shape)
 
     def call(self, inputs):
-        # Compute attention scores
+        # Compute attention scores: e = tanh(W^T * x + b)
+        # This gives a score for each timestep indicating its importance
         e = tf.tanh(tf.tensordot(inputs, self.W, axes=1) + self.b)
+        # Normalize scores to get attention weights (probabilities over timesteps)
         a = tf.nn.softmax(e, axis=1)
-        # Weighted sum
+        # Compute weighted sum: output = sum(attention_weights * inputs)
+        # This aggregates the sequence into a single vector, weighted by importance
         output = tf.reduce_sum(inputs * a, axis=1)
         return output
 
@@ -258,7 +269,18 @@ class AttentionLSTMModel(BaseModel):
 
 
 class TCNBlock(layers.Layer):
-    """Temporal Convolutional Network block with dilated causal convolutions."""
+    """
+    Temporal Convolutional Network block with dilated causal convolutions.
+    
+    TCN blocks use dilated convolutions to capture long-range dependencies without
+    the sequential processing overhead of RNNs. Each block consists of two dilated
+    causal convolutions with residual connections for better gradient flow.
+    
+    Key features:
+    - Causal padding: ensures no future information leaks into past predictions
+    - Dilated convolutions: exponentially increase receptive field (2^layer_depth)
+    - Residual connections: help with training deep networks
+    """
 
     def __init__(
         self,
@@ -274,11 +296,12 @@ class TCNBlock(layers.Layer):
         self.dilation_rate = dilation_rate
         self.dropout_rate = dropout_rate
 
+        # Two dilated causal convolutions in sequence
         self.conv1 = layers.Conv1D(
             filters=filters,
             kernel_size=kernel_size,
             dilation_rate=dilation_rate,
-            padding="causal",
+            padding="causal",  # No future information leakage
             activation="relu",
         )
         self.conv2 = layers.Conv1D(
@@ -290,9 +313,10 @@ class TCNBlock(layers.Layer):
         )
         self.dropout1 = layers.Dropout(dropout_rate)
         self.dropout2 = layers.Dropout(dropout_rate)
-        self.downsample = None
+        self.downsample = None  # Will be created if input dimension doesn't match
 
     def build(self, input_shape):
+        # If input feature dimension doesn't match output, add 1x1 conv for residual
         if input_shape[-1] != self.filters:
             self.downsample = layers.Conv1D(
                 filters=self.filters, kernel_size=1, padding="same"
@@ -300,18 +324,20 @@ class TCNBlock(layers.Layer):
         super().build(input_shape)
 
     def call(self, inputs, training=None):
+        # First dilated convolution
         x = self.conv1(inputs)
         x = self.dropout1(x, training=training)
+        # Second dilated convolution
         x = self.conv2(x)
         x = self.dropout2(x, training=training)
 
-        # Residual connection
+        # Residual connection: helps with gradient flow and training stability
         if self.downsample is not None:
-            residual = self.downsample(inputs)
+            residual = self.downsample(inputs)  # Project input to match dimensions
         else:
-            residual = inputs
+            residual = inputs  # Direct connection if dimensions match
 
-        return layers.add([x, residual])
+        return layers.add([x, residual])  # Element-wise addition
 
     def get_config(self):
         config = super().get_config()

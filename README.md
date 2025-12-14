@@ -42,8 +42,7 @@ N-CMAPSS-Engine-Prediction/
 ├── notebooks/                # Jupyter notebooks
 │   └── N_CMAPSS.ipynb
 │
-├── train_model.py            # Main training CLI (recommended)
-├── main.py                   # Convenience wrapper (calls train_model.py)
+├── train_model.py            # Main training CLI
 ├── requirements.txt          # Dependencies
 ├── uv.lock                   # uv dependency lockfile
 ├── pyproject.toml            # uv project config
@@ -67,11 +66,8 @@ uv sync
 
 ### Running the project
 ```bash
-# Recommended: Use train_model.py for full CLI features
+# Train a model using the CLI
 python train_model.py --model lstm
-
-# Or use main.py as a convenience wrapper
-python main.py --model lstm
 ```
 
 ## Model Architectures

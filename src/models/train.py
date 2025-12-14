@@ -429,7 +429,21 @@ def train_lstm(
 ) -> Tuple[keras.Model, Dict[str, Any]]:
     """
     Legacy function - trains LSTM model.
-    Use train_model() with model_name parameter for new code.
+    
+    .. deprecated:: 0.1.0
+        Use :func:`train_model` with ``model_name="lstm"`` instead.
+    
+    This function is kept for backwards compatibility but will be removed
+    in a future version. Migrate to:
+    
+    .. code-block:: python
+    
+        model, history, metrics = train_model(
+            dev_X=dev_X,
+            dev_y=dev_y,
+            model_name="lstm",
+            ...
+        )
     """
     # Map old config keys to new ones
     if config:

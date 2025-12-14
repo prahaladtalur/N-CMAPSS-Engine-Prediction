@@ -24,7 +24,17 @@ Usage examples:
 
 import argparse
 import sys
+from pathlib import Path
 from typing import List, Optional
+
+# Load environment variables from .env file (if present)
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+except ImportError:
+    pass  # dotenv is optional
 from src.data.load_data import get_datasets
 from src.models.train import train_model, compare_models
 from src.models.architectures import (

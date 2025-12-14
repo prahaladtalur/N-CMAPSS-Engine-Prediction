@@ -6,7 +6,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Optional, Tuple, Dict
-from scipy import stats
 
 
 def plot_rul_distribution(

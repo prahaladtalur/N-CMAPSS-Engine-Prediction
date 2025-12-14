@@ -1,4 +1,12 @@
-"""Utility functions for visualization and metrics."""
+"""
+Utility functions for visualization and metrics.
+
+This module provides:
+- Data visualization functions (sensor analysis, RUL distribution, etc.)
+- Model evaluation visualizations (trajectory analysis, critical zones, etc.)
+- Evaluation metrics (RMSE, MAE, PHM score, etc.)
+- Training visualization utilities (history plots, predictions, comparisons)
+"""
 
 from src.utils.visualize import (
     # Data Analysis Visualizations

@@ -1,7 +1,6 @@
 """Models for RUL prediction."""
 
-from src.models.lstm_model import build_lstm_model
-from src.models.train import train_lstm, train_model, compare_models, prepare_sequences
+from src.models.train import train_model, compare_models
 from src.models.architectures import (
     ModelRegistry,
     get_model,
@@ -9,16 +8,17 @@ from src.models.architectures import (
     get_model_info,
 )
 
+# Legacy API - deprecated, use train_model() with model_name="lstm" instead
+from src.models.train import train_lstm
+
 __all__ = [
-    # Legacy
-    "build_lstm_model",
-    "train_lstm",
-    "prepare_sequences",
-    # New API
+    # Main API
     "train_model",
     "compare_models",
     "ModelRegistry",
     "get_model",
     "list_available_models",
     "get_model_info",
+    # Legacy (deprecated)
+    "train_lstm",
 ]
