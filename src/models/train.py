@@ -415,45 +415,6 @@ def compare_models(
     return results
 
 
-# Legacy function for backwards compatibility
-def train_lstm(
-    dev_X: List[np.ndarray],
-    dev_y: List[np.ndarray],
-    val_X: Optional[List[np.ndarray]] = None,
-    val_y: Optional[List[np.ndarray]] = None,
-    test_X: Optional[List[np.ndarray]] = None,
-    test_y: Optional[List[np.ndarray]] = None,
-    config: Optional[Dict[str, Any]] = None,
-    project_name: str = "n-cmapss-rul-prediction",
-    run_name: Optional[str] = None,
-) -> Tuple[keras.Model, Dict[str, Any]]:
-    """
-    Legacy function - trains LSTM model.
-    Use train_model() with model_name parameter for new code.
-    """
-    # Map old config keys to new ones
-    if config:
-        if "lstm_units" in config:
-            config["units"] = config.pop("lstm_units")
-
-    model, history, test_metrics = train_model(
-        dev_X=dev_X,
-        dev_y=dev_y,
-        model_name="lstm",
-        val_X=val_X,
-        val_y=val_y,
-        test_X=test_X,
-        test_y=test_y,
-        config=config,
-        project_name=project_name,
-        run_name=run_name,
-    )
-
-    # Merge test metrics into history for backwards compatibility
-    combined_history = {**history, **test_metrics}
-    return model, combined_history
-
-
 if __name__ == "__main__":
     from src.data.load_data import get_datasets
 
