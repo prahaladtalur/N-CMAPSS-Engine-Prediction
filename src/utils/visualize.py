@@ -202,13 +202,14 @@ def plot_sensor_degradation(
         sensor_values = sensor_sorted[:, sensor_idx]
 
         # Plot sensor value vs RUL
-        scatter = ax.scatter(rul_sorted, sensor_values, c=np.arange(len(rul_sorted)),
-                           cmap='viridis', alpha=0.6, s=20)
+        scatter = ax.scatter(
+            rul_sorted, sensor_values, c=np.arange(len(rul_sorted)), cmap="viridis", alpha=0.6, s=20
+        )
 
         # Fit trend line
         z = np.polyfit(rul_sorted, sensor_values, 2)
         p = np.poly1d(z)
-        ax.plot(rul_sorted, p(rul_sorted), "r--", linewidth=2, alpha=0.8, label='Trend')
+        ax.plot(rul_sorted, p(rul_sorted), "r--", linewidth=2, alpha=0.8, label="Trend")
 
         ax.set_xlabel("RUL (cycles)", fontsize=11)
         ax.set_ylabel(f"Sensor {sensor_idx} Mean Value", fontsize=11)
@@ -218,14 +219,15 @@ def plot_sensor_degradation(
 
         # Add colorbar
         cbar = plt.colorbar(scatter, ax=ax)
-        cbar.set_label('Time Progression', fontsize=9)
+        cbar.set_label("Time Progression", fontsize=9)
 
     # Hide unused subplots
     for i in range(n_sensors, len(axes)):
-        axes[i].axis('off')
+        axes[i].axis("off")
 
-    plt.suptitle(f"Unit {unit_idx} - Sensor Degradation Analysis",
-                 fontsize=14, fontweight="bold", y=1.00)
+    plt.suptitle(
+        f"Unit {unit_idx} - Sensor Degradation Analysis", fontsize=14, fontweight="bold", y=1.00
+    )
     plt.tight_layout()
     plt.show()
 
@@ -285,10 +287,19 @@ def plot_sensor_correlation_heatmap(
 
     # Plot heatmap
     fig, ax = plt.subplots(figsize=(12, 10))
-    sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='coolwarm', center=0,
-                xticklabels=labels_all, yticklabels=labels_all,
-                cbar_kws={'label': 'Correlation Coefficient'}, ax=ax,
-                square=True, linewidths=0.5)
+    sns.heatmap(
+        corr_matrix,
+        annot=True,
+        fmt=".2f",
+        cmap="coolwarm",
+        center=0,
+        xticklabels=labels_all,
+        yticklabels=labels_all,
+        cbar_kws={"label": "Correlation Coefficient"},
+        ax=ax,
+        square=True,
+        linewidths=0.5,
+    )
 
     ax.set_title("Sensor-RUL Correlation Heatmap", fontsize=14, fontweight="bold", pad=20)
     plt.tight_layout()
@@ -336,34 +347,52 @@ def plot_rul_trajectory(
     fig, axes = plt.subplots(2, 1, figsize=(14, 10))
 
     # Top plot: RUL over time
-    axes[0].plot(cycles, y_true_unit, 'b-', linewidth=2.5, label='Actual RUL', alpha=0.8)
-    axes[0].plot(cycles, y_pred_unit, 'r--', linewidth=2, label='Predicted RUL', alpha=0.8)
-    axes[0].fill_between(cycles, y_true_unit, y_pred_unit, alpha=0.2, color='gray', label='Error')
+    axes[0].plot(cycles, y_true_unit, "b-", linewidth=2.5, label="Actual RUL", alpha=0.8)
+    axes[0].plot(cycles, y_pred_unit, "r--", linewidth=2, label="Predicted RUL", alpha=0.8)
+    axes[0].fill_between(cycles, y_true_unit, y_pred_unit, alpha=0.2, color="gray", label="Error")
 
     # Add critical zones
-    axes[0].axhspan(0, 30, alpha=0.1, color='red', label='Critical Zone (<30 cycles)')
-    axes[0].axhspan(30, 75, alpha=0.1, color='orange', label='Warning Zone (30-75 cycles)')
+    axes[0].axhspan(0, 30, alpha=0.1, color="red", label="Critical Zone (<30 cycles)")
+    axes[0].axhspan(30, 75, alpha=0.1, color="orange", label="Warning Zone (30-75 cycles)")
 
     axes[0].set_xlabel("Cycle Number", fontsize=12)
     axes[0].set_ylabel("RUL (cycles)", fontsize=12)
-    axes[0].set_title(f"Unit {unit_idx} - RUL Trajectory Over Lifecycle",
-                     fontsize=14, fontweight="bold")
+    axes[0].set_title(
+        f"Unit {unit_idx} - RUL Trajectory Over Lifecycle", fontsize=14, fontweight="bold"
+    )
     axes[0].legend(loc="best", fontsize=10)
     axes[0].grid(alpha=0.3)
 
     # Bottom plot: Prediction error over time
     error = y_pred_unit - y_true_unit
-    axes[1].plot(cycles, error, 'purple', linewidth=2, alpha=0.7)
-    axes[1].axhline(y=0, color='black', linestyle='--', linewidth=1.5)
-    axes[1].fill_between(cycles, 0, error, where=(error >= 0), alpha=0.3, color='red',
-                         label='Over-prediction', interpolate=True)
-    axes[1].fill_between(cycles, 0, error, where=(error < 0), alpha=0.3, color='blue',
-                         label='Under-prediction', interpolate=True)
+    axes[1].plot(cycles, error, "purple", linewidth=2, alpha=0.7)
+    axes[1].axhline(y=0, color="black", linestyle="--", linewidth=1.5)
+    axes[1].fill_between(
+        cycles,
+        0,
+        error,
+        where=(error >= 0),
+        alpha=0.3,
+        color="red",
+        label="Over-prediction",
+        interpolate=True,
+    )
+    axes[1].fill_between(
+        cycles,
+        0,
+        error,
+        where=(error < 0),
+        alpha=0.3,
+        color="blue",
+        label="Under-prediction",
+        interpolate=True,
+    )
 
     axes[1].set_xlabel("Cycle Number", fontsize=12)
     axes[1].set_ylabel("Prediction Error (cycles)", fontsize=12)
-    axes[1].set_title(f"Unit {unit_idx} - Prediction Error Over Time",
-                     fontsize=14, fontweight="bold")
+    axes[1].set_title(
+        f"Unit {unit_idx} - Prediction Error Over Time", fontsize=14, fontweight="bold"
+    )
     axes[1].legend(loc="best", fontsize=10)
     axes[1].grid(alpha=0.3)
 
@@ -406,9 +435,9 @@ def plot_critical_zone_analysis(
     safe_mask = y_true >= warning_threshold
 
     zones = {
-        'Critical (RUL < 30)': critical_mask,
-        'Warning (30 ≤ RUL < 75)': warning_mask,
-        'Safe (RUL ≥ 75)': safe_mask
+        "Critical (RUL < 30)": critical_mask,
+        "Warning (30 ≤ RUL < 75)": warning_mask,
+        "Safe (RUL ≥ 75)": safe_mask,
     }
 
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
@@ -417,7 +446,7 @@ def plot_critical_zone_analysis(
     ax = axes[0, 0]
     zone_errors = []
     zone_labels = []
-    colors = ['red', 'orange', 'green']
+    colors = ["red", "orange", "green"]
 
     for (zone_name, mask), color in zip(zones.items(), colors):
         if mask.sum() > 0:
@@ -425,16 +454,20 @@ def plot_critical_zone_analysis(
             zone_errors.append(errors)
             zone_labels.append(zone_name)
 
-    bp = ax.boxplot(zone_errors, labels=zone_labels, patch_artist=True,
-                    medianprops=dict(color="black", linewidth=2))
-    for patch, color in zip(bp['boxes'], colors[:len(zone_errors)]):
+    bp = ax.boxplot(
+        zone_errors,
+        labels=zone_labels,
+        patch_artist=True,
+        medianprops=dict(color="black", linewidth=2),
+    )
+    for patch, color in zip(bp["boxes"], colors[: len(zone_errors)]):
         patch.set_facecolor(color)
         patch.set_alpha(0.6)
 
-    ax.axhline(y=0, color='black', linestyle='--', linewidth=1.5, alpha=0.7)
+    ax.axhline(y=0, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
     ax.set_ylabel("Prediction Error (cycles)", fontsize=11)
     ax.set_title("Error Distribution by RUL Zone", fontsize=12, fontweight="bold")
-    ax.grid(alpha=0.3, axis='y')
+    ax.grid(alpha=0.3, axis="y")
 
     # 2. Accuracy in each zone
     ax = axes[0, 1]
@@ -446,7 +479,7 @@ def plot_critical_zone_analysis(
     for zone_name, mask in zones.items():
         if mask.sum() > 0:
             errors = np.abs(y_pred[mask] - y_true[mask])
-            zone_names.append(zone_name.split('(')[0].strip())
+            zone_names.append(zone_name.split("(")[0].strip())
             accuracies_10.append(100 * np.mean(errors <= 10))
             accuracies_20.append(100 * np.mean(errors <= 20))
             accuracies_30.append(100 * np.mean(errors <= 30))
@@ -454,29 +487,30 @@ def plot_critical_zone_analysis(
     x = np.arange(len(zone_names))
     width = 0.25
 
-    ax.bar(x - width, accuracies_10, width, label='±10 cycles', color='darkgreen', alpha=0.8)
-    ax.bar(x, accuracies_20, width, label='±20 cycles', color='lightgreen', alpha=0.8)
-    ax.bar(x + width, accuracies_30, width, label='±30 cycles', color='palegreen', alpha=0.8)
+    ax.bar(x - width, accuracies_10, width, label="±10 cycles", color="darkgreen", alpha=0.8)
+    ax.bar(x, accuracies_20, width, label="±20 cycles", color="lightgreen", alpha=0.8)
+    ax.bar(x + width, accuracies_30, width, label="±30 cycles", color="palegreen", alpha=0.8)
 
     ax.set_ylabel("Accuracy (%)", fontsize=11)
     ax.set_title("Prediction Accuracy by Zone", fontsize=12, fontweight="bold")
     ax.set_xticks(x)
     ax.set_xticklabels(zone_names)
     ax.legend(loc="best", fontsize=9)
-    ax.grid(alpha=0.3, axis='y')
+    ax.grid(alpha=0.3, axis="y")
 
     # 3. Sample distribution across zones
     ax = axes[1, 0]
     zone_counts = [mask.sum() for mask in zones.values()]
     zone_names_full = list(zones.keys())
-    colors_full = ['red', 'orange', 'green']
+    colors_full = ["red", "orange", "green"]
 
-    wedges, texts, autotexts = ax.pie(zone_counts, labels=zone_names_full, autopct='%1.1f%%',
-                                       colors=colors_full, startangle=90)
+    wedges, texts, autotexts = ax.pie(
+        zone_counts, labels=zone_names_full, autopct="%1.1f%%", colors=colors_full, startangle=90
+    )
     for autotext in autotexts:
-        autotext.set_color('white')
+        autotext.set_color("white")
         autotext.set_fontsize(10)
-        autotext.set_fontweight('bold')
+        autotext.set_fontweight("bold")
 
     ax.set_title("Sample Distribution Across Zones", fontsize=12, fontweight="bold")
 
@@ -484,11 +518,10 @@ def plot_critical_zone_analysis(
     ax = axes[1, 1]
     for (zone_name, mask), color in zip(zones.items(), colors):
         if mask.sum() > 0:
-            ax.scatter(y_true[mask], y_pred[mask], alpha=0.5, s=20,
-                      c=color, label=zone_name)
+            ax.scatter(y_true[mask], y_pred[mask], alpha=0.5, s=20, c=color, label=zone_name)
 
     max_val = max(y_true.max(), y_pred.max())
-    ax.plot([0, max_val], [0, max_val], 'k--', linewidth=2, alpha=0.7, label='Perfect Prediction')
+    ax.plot([0, max_val], [0, max_val], "k--", linewidth=2, alpha=0.7, label="Perfect Prediction")
 
     ax.set_xlabel("True RUL", fontsize=11)
     ax.set_ylabel("Predicted RUL", fontsize=11)
@@ -562,17 +595,26 @@ def plot_multi_sensor_lifecycle(
     colors = plt.cm.tab10(np.linspace(0, 1, n_sensors))
 
     for i in range(n_sensors):
-        ax.plot(cycles, sensor_normalized[:, i], linewidth=2, alpha=0.7,
-               label=f'Sensor {i}', color=colors[i])
+        ax.plot(
+            cycles,
+            sensor_normalized[:, i],
+            linewidth=2,
+            alpha=0.7,
+            label=f"Sensor {i}",
+            color=colors[i],
+        )
 
     # Add RUL overlay (normalized)
     rul_normalized = (rul_sorted - rul_sorted.min()) / (rul_sorted.max() - rul_sorted.min())
-    ax.plot(cycles, rul_normalized, 'k--', linewidth=3, alpha=0.5, label='RUL (normalized)')
+    ax.plot(cycles, rul_normalized, "k--", linewidth=3, alpha=0.5, label="RUL (normalized)")
 
     ax.set_xlabel("Cycle (sorted by descending RUL)", fontsize=12)
     ax.set_ylabel("Normalized Sensor Value", fontsize=12)
-    ax.set_title(f"Unit {unit_idx} - Multi-Sensor Lifecycle Comparison (Normalized)",
-                fontsize=14, fontweight="bold")
+    ax.set_title(
+        f"Unit {unit_idx} - Multi-Sensor Lifecycle Comparison (Normalized)",
+        fontsize=14,
+        fontweight="bold",
+    )
     ax.legend(loc="best", fontsize=9, ncol=3)
     ax.grid(alpha=0.3)
 
@@ -623,23 +665,36 @@ def plot_prediction_confidence(
         lower = pred_mean - 2 * pred_std
         upper = pred_mean + 2 * pred_std
 
-        ax.fill_between(indices, lower[indices], upper[indices], alpha=0.3, color='lightblue',
-                       label='95% Confidence Interval')
-        ax.plot(indices, pred_mean[indices], 'b-', linewidth=2, label='Mean Prediction')
+        ax.fill_between(
+            indices,
+            lower[indices],
+            upper[indices],
+            alpha=0.3,
+            color="lightblue",
+            label="95% Confidence Interval",
+        )
+        ax.plot(indices, pred_mean[indices], "b-", linewidth=2, label="Mean Prediction")
     else:
         # Use error-based confidence
         window_size = max(10, n_samples // 50)
-        rolling_std = np.array([errors[max(0, i-window_size):i+window_size].std()
-                               for i in range(len(errors))])
+        rolling_std = np.array(
+            [errors[max(0, i - window_size) : i + window_size].std() for i in range(len(errors))]
+        )
 
         lower = y_pred - 2 * rolling_std
         upper = y_pred + 2 * rolling_std
 
-        ax.fill_between(indices, lower[indices], upper[indices], alpha=0.3, color='lightblue',
-                       label='Estimated Confidence Interval')
-        ax.plot(indices, y_pred[indices], 'b-', linewidth=2, label='Prediction')
+        ax.fill_between(
+            indices,
+            lower[indices],
+            upper[indices],
+            alpha=0.3,
+            color="lightblue",
+            label="Estimated Confidence Interval",
+        )
+        ax.plot(indices, y_pred[indices], "b-", linewidth=2, label="Prediction")
 
-    ax.plot(indices, y_true[indices], 'r-', linewidth=2, alpha=0.7, label='Actual RUL')
+    ax.plot(indices, y_true[indices], "r-", linewidth=2, alpha=0.7, label="Actual RUL")
     ax.set_xlabel("Sample Index", fontsize=11)
     ax.set_ylabel("RUL (cycles)", fontsize=11)
     ax.set_title("Predictions with Confidence Intervals", fontsize=12, fontweight="bold")
@@ -652,13 +707,13 @@ def plot_prediction_confidence(
         all_preds = np.array(model_predictions)
         pred_std = all_preds.std(axis=0)
 
-        scatter = ax.scatter(pred_std, errors, alpha=0.5, s=20, c=y_true, cmap='viridis')
+        scatter = ax.scatter(pred_std, errors, alpha=0.5, s=20, c=y_true, cmap="viridis")
         ax.set_xlabel("Prediction Std Dev", fontsize=11)
-        plt.colorbar(scatter, ax=ax, label='True RUL')
+        plt.colorbar(scatter, ax=ax, label="True RUL")
     else:
-        scatter = ax.scatter(y_true, errors, alpha=0.5, s=20, c=y_pred, cmap='viridis')
+        scatter = ax.scatter(y_true, errors, alpha=0.5, s=20, c=y_pred, cmap="viridis")
         ax.set_xlabel("True RUL", fontsize=11)
-        plt.colorbar(scatter, ax=ax, label='Predicted RUL')
+        plt.colorbar(scatter, ax=ax, label="Predicted RUL")
 
     ax.set_ylabel("Absolute Error", fontsize=11)
     ax.set_title("Prediction Uncertainty Analysis", fontsize=12, fontweight="bold")
@@ -669,25 +724,25 @@ def plot_prediction_confidence(
 
     # Bin by predicted value
     bins = [0, 25, 50, 100, 200, y_true.max()]
-    bin_labels = ['0-25', '25-50', '50-100', '100-200', '200+']
+    bin_labels = ["0-25", "25-50", "50-100", "100-200", "200+"]
 
     bin_errors = []
     used_labels = []
-    for i in range(len(bins)-1):
-        mask = (y_true >= bins[i]) & (y_true < bins[i+1])
+    for i in range(len(bins) - 1):
+        mask = (y_true >= bins[i]) & (y_true < bins[i + 1])
         if mask.sum() > 0:
             bin_errors.append(errors[mask])
             used_labels.append(bin_labels[i])
 
     bp = ax.boxplot(bin_errors, labels=used_labels, patch_artist=True)
-    for patch in bp['boxes']:
-        patch.set_facecolor('lightblue')
+    for patch in bp["boxes"]:
+        patch.set_facecolor("lightblue")
         patch.set_alpha(0.7)
 
     ax.set_xlabel("True RUL Range", fontsize=11)
     ax.set_ylabel("Absolute Error", fontsize=11)
     ax.set_title("Error Distribution by RUL Range", fontsize=12, fontweight="bold")
-    ax.grid(alpha=0.3, axis='y')
+    ax.grid(alpha=0.3, axis="y")
 
     # 4. Calibration: predicted vs actual error
     ax = axes[1, 1]
@@ -701,12 +756,12 @@ def plot_prediction_confidence(
     smoothed_x = []
 
     for i in range(0, len(sorted_idx) - window, window):
-        idx_window = sorted_idx[i:i+window]
+        idx_window = sorted_idx[i : i + window]
         smoothed_x.append(y_pred[idx_window].mean())
         smoothed_pred.append(y_pred[idx_window].mean())
         smoothed_error.append(errors[idx_window].mean())
 
-    ax.plot(smoothed_x, smoothed_error, 'b-', linewidth=2.5, label='Actual MAE')
+    ax.plot(smoothed_x, smoothed_error, "b-", linewidth=2.5, label="Actual MAE")
     ax.set_xlabel("Predicted RUL", fontsize=11)
     ax.set_ylabel("Mean Absolute Error", fontsize=11)
     ax.set_title("Error vs. Predicted RUL", fontsize=12, fontweight="bold")

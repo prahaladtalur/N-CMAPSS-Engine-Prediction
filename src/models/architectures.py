@@ -195,7 +195,7 @@ class BiGRUModel(BaseModel):
 class AttentionLayer(layers.Layer):
     """
     Custom attention layer for sequence models.
-    
+
     Implements a simple additive attention mechanism that learns to focus on
     important timesteps in the input sequence. The attention weights are computed
     using a learned linear transformation followed by tanh activation and softmax.
@@ -271,11 +271,11 @@ class AttentionLSTMModel(BaseModel):
 class TCNBlock(layers.Layer):
     """
     Temporal Convolutional Network block with dilated causal convolutions.
-    
+
     TCN blocks use dilated convolutions to capture long-range dependencies without
     the sequential processing overhead of RNNs. Each block consists of two dilated
     causal convolutions with residual connections for better gradient flow.
-    
+
     Key features:
     - Causal padding: ensures no future information leaks into past predictions
     - Dilated convolutions: exponentially increase receptive field (2^layer_depth)
@@ -318,9 +318,7 @@ class TCNBlock(layers.Layer):
     def build(self, input_shape):
         # If input feature dimension doesn't match output, add 1x1 conv for residual
         if input_shape[-1] != self.filters:
-            self.downsample = layers.Conv1D(
-                filters=self.filters, kernel_size=1, padding="same"
-            )
+            self.downsample = layers.Conv1D(filters=self.filters, kernel_size=1, padding="same")
         super().build(input_shape)
 
     def call(self, inputs, training=None):
@@ -725,17 +723,11 @@ class InceptionLSTMModel(BaseModel):
         inputs = layers.Input(shape=input_shape)
 
         # Inception module - parallel convolutions with different kernel sizes
-        conv1 = layers.Conv1D(filters=16, kernel_size=1, activation="relu", padding="same")(
-            inputs
-        )
+        conv1 = layers.Conv1D(filters=16, kernel_size=1, activation="relu", padding="same")(inputs)
 
-        conv3 = layers.Conv1D(filters=16, kernel_size=3, activation="relu", padding="same")(
-            inputs
-        )
+        conv3 = layers.Conv1D(filters=16, kernel_size=3, activation="relu", padding="same")(inputs)
 
-        conv5 = layers.Conv1D(filters=16, kernel_size=5, activation="relu", padding="same")(
-            inputs
-        )
+        conv5 = layers.Conv1D(filters=16, kernel_size=5, activation="relu", padding="same")(inputs)
 
         pool = layers.MaxPooling1D(pool_size=3, strides=1, padding="same")(inputs)
         pool = layers.Conv1D(filters=16, kernel_size=1, activation="relu", padding="same")(pool)

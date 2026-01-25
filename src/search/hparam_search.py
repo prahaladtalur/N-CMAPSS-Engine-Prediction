@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from src.data.load_data import get_datasets
+
 # Import train_model lazily to avoid circular imports during CLI startup.
 import sys
 
@@ -90,9 +91,7 @@ def generate_search_jobs(args, spec: Dict) -> List[Dict]:
 
     if method not in SEARCH_METHODS:
         available = ", ".join(sorted(SEARCH_METHODS))
-        raise ValueError(
-            f"Unsupported search method '{method}'. Available methods: {available}"
-        )
+        raise ValueError(f"Unsupported search method '{method}'. Available methods: {available}")
 
     method_config = {"num_trials": spec.get("num_trials", 0)}
     combos = SEARCH_METHODS[method](parameter_grid, method_config)

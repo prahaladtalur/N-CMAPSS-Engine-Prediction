@@ -271,7 +271,9 @@ def main() -> None:
         if sort_metric == "rmse":
             print(f"  {model}: RMSE={rmse:.4f}, MAE={mae:.4f}")
         else:
-            print(f"  {model}: {sort_metric.upper()}={metric_value:.4f}, RMSE={rmse:.4f}, MAE={mae:.4f}")
+            print(
+                f"  {model}: {sort_metric.upper()}={metric_value:.4f}, RMSE={rmse:.4f}, MAE={mae:.4f}"
+            )
 
     best_model, best_metrics = ranked[0]
     print(f"\nBest model by {sort_metric.upper()}: {best_model}")

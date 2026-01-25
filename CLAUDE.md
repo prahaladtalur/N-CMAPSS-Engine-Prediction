@@ -17,20 +17,32 @@ This is an ML project for predicting Remaining Useful Life (RUL) of NASA turbofa
 
 ```bash
 # Install dependencies
-uv sync
+make install-dev   # or: uv sync
+
+# Run all checks before committing
+make check         # runs lint + typecheck
+
+# Format code
+make format
 
 # Train a model
-python train_model.py --model lstm --epochs 30
+make train         # or: python train_model.py --model lstm --epochs 30
 
 # List all available models
 python train_model.py --list-models
 
 # Compare multiple models
 python train_model.py --compare --models lstm gru transformer
-
-# Switch dataset (FD001-FD007)
-python train_model.py --model lstm --fd 2
 ```
+
+## CI/CD
+
+GitHub Actions runs on every push/PR to main:
+- **Lint**: Black formatting check
+- **Typecheck**: MyPy static analysis
+- **Matrix**: Python 3.9, 3.10, 3.11
+
+Run `make check` locally before pushing to catch issues early.
 
 ## Architecture
 

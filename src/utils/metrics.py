@@ -63,9 +63,7 @@ def asymmetric_loss(y_true: np.ndarray, y_pred: np.ndarray, alpha: float = 2.0) 
     return np.mean(loss)
 
 
-def rul_accuracy(
-    y_true: np.ndarray, y_pred: np.ndarray, threshold: float = 10.0
-) -> float:
+def rul_accuracy(y_true: np.ndarray, y_pred: np.ndarray, threshold: float = 10.0) -> float:
     """
     RUL Accuracy - percentage of predictions within threshold of true value.
 
