@@ -14,16 +14,13 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from src.data.load_data import get_datasets
-# Import train_model from train_model.py (functions moved there)
+# Import train_model lazily to avoid circular imports during CLI startup.
 import sys
-from pathlib import Path
 
-# Add project root to path to import train_model
+# Add project root to path to import train_model when needed
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
-
-from train_model import train_model
 
 
 def load_search_spec(path: str) -> Dict:
@@ -145,6 +142,8 @@ def execute_training_job(job: Dict) -> Dict:
         visualize = job.get("visualize", False)
         project_name = job.get("project_name", "n-cmapss-rul-search")
         run_name = job.get("run_name") or f"{job['model']}-{job['job_id']}"
+
+        from train_model import train_model
 
         _, _, metrics = train_model(
             dev_X=dev_X,

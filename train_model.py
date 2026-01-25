@@ -149,6 +149,7 @@ def train_model(
     run_name: Optional[str] = None,
     normalize: bool = True,
     visualize: bool = True,
+    use_early_stop: bool = True,
 ) -> Tuple[keras.Model, Dict[str, Any], Dict[str, float]]:
     """
     Train a model with wandb logging and comprehensive evaluation.
@@ -182,6 +183,7 @@ def train_model(
         "validation_split": 0.2,
         "patience_early_stop": 10,
         "patience_lr_reduce": 5,
+        "use_early_stop": True,
     }
 
     if config is None:
@@ -262,12 +264,6 @@ def train_model(
             save_model=False,
             save_graph=False,
         ),
-        keras.callbacks.EarlyStopping(
-            monitor="val_loss" if validation_data else "loss",
-            patience=config["patience_early_stop"],
-            restore_best_weights=True,
-            verbose=1,
-        ),
         keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss" if validation_data else "loss",
             factor=0.5,
@@ -276,6 +272,15 @@ def train_model(
             verbose=1,
         ),
     ]
+    if use_early_stop:
+        callbacks.append(
+            keras.callbacks.EarlyStopping(
+                monitor="val_loss" if validation_data else "loss",
+                patience=config["patience_early_stop"],
+                restore_best_weights=True,
+                verbose=1,
+            )
+        )
 
     # Train model
     print("\nStarting training...")
@@ -397,6 +402,10 @@ def compare_models(
     if model_names is None:
         model_names = list_available_models()
 
+    use_early_stop = True
+    if config and "use_early_stop" in config:
+        use_early_stop = bool(config["use_early_stop"])
+
     print(f"\nComparing {len(model_names)} models: {model_names}")
     print("=" * 60)
 
@@ -420,6 +429,7 @@ def compare_models(
                 project_name=project_name,
                 run_name=f"{model_name}-comparison",
                 visualize=False,  # Skip individual visualizations
+                use_early_stop=use_early_stop,
             )
 
             results[model_name] = {
@@ -723,6 +733,18 @@ Examples:
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size (default: 32)")
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs (default: 50)")
     parser.add_argument(
+        "--patience-early-stop",
+        type=int,
+        default=10,
+        help="Early stopping patience (default: 10)",
+    )
+    parser.add_argument(
+        "--patience-lr-reduce",
+        type=int,
+        default=5,
+        help="ReduceLROnPlateau patience (default: 5)",
+    )
+    parser.add_argument(
         "--max-seq-length",
         type=int,
         default=None,
@@ -753,6 +775,11 @@ Examples:
         "--no-visualize",
         action="store_true",
         help="Disable visualization generation",
+    )
+    parser.add_argument(
+        "--no-early-stop",
+        action="store_true",
+        help="Disable early stopping to run all epochs",
     )
     parser.add_argument(
         "--list-models",
@@ -848,6 +875,15 @@ Examples:
         "batch_size": json_training_config.get("batch_size", args.batch_size),
         "epochs": json_training_config.get("epochs", args.epochs),
         "max_sequence_length": json_training_config.get("max_sequence_length", args.max_seq_length),
+        "patience_early_stop": json_training_config.get(
+            "patience_early_stop", args.patience_early_stop
+        ),
+        "patience_lr_reduce": json_training_config.get(
+            "patience_lr_reduce", args.patience_lr_reduce
+        ),
+        "use_early_stop": json_training_config.get(
+            "use_early_stop", not args.no_early_stop
+        ),
     }
 
     # Compare mode
@@ -902,6 +938,7 @@ Examples:
             run_name=args.run_name,
             normalize=not args.no_normalize,
             visualize=not args.no_visualize,
+            use_early_stop=config.get("use_early_stop", True),
         )
 
         print("\n" + "=" * 80)

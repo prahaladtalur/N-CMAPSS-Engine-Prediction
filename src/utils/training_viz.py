@@ -56,6 +56,8 @@ def plot_training_history(
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"Training history saved to: {save_path}")
+        plt.close(fig)
+        return
 
     plt.show()
 
@@ -112,6 +114,8 @@ def plot_predictions(
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"Predictions plot saved to: {save_path}")
+        plt.close(fig)
+        return
 
     plt.show()
 
@@ -184,6 +188,8 @@ def plot_error_distribution(
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"Error distribution saved to: {save_path}")
+        plt.close(fig)
+        return
 
     plt.show()
 
@@ -240,6 +246,8 @@ def plot_model_comparison(
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"Model comparison saved to: {save_path}")
+        plt.close(fig)
+        return
 
     plt.show()
 
@@ -293,6 +301,8 @@ def plot_sample_predictions(
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"Sample predictions saved to: {save_path}")
+        plt.close(fig)
+        return
 
     plt.show()
 
