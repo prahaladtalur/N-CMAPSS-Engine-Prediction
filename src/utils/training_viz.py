@@ -27,9 +27,7 @@ def plot_training_history(
     epochs = range(1, len(history["loss"]) + 1)
     axes[0].plot(epochs, history["loss"], "b-", label="Training Loss", linewidth=2)
     if "val_loss" in history:
-        axes[0].plot(
-            epochs, history["val_loss"], "r-", label="Validation Loss", linewidth=2
-        )
+        axes[0].plot(epochs, history["val_loss"], "r-", label="Validation Loss", linewidth=2)
     axes[0].set_xlabel("Epoch", fontsize=12)
     axes[0].set_ylabel("Loss (MSE)", fontsize=12)
     axes[0].set_title(f"{model_name} - Training Loss", fontsize=14, fontweight="bold")
@@ -39,14 +37,10 @@ def plot_training_history(
     # Plot MAE
     axes[1].plot(epochs, history["mae"], "b-", label="Training MAE", linewidth=2)
     if "val_mae" in history:
-        axes[1].plot(
-            epochs, history["val_mae"], "r-", label="Validation MAE", linewidth=2
-        )
+        axes[1].plot(epochs, history["val_mae"], "r-", label="Validation MAE", linewidth=2)
     axes[1].set_xlabel("Epoch", fontsize=12)
     axes[1].set_ylabel("MAE", fontsize=12)
-    axes[1].set_title(
-        f"{model_name} - Mean Absolute Error", fontsize=14, fontweight="bold"
-    )
+    axes[1].set_title(f"{model_name} - Mean Absolute Error", fontsize=14, fontweight="bold")
     axes[1].legend(loc="best", fontsize=10)
     axes[1].grid(alpha=0.3)
 
@@ -93,9 +87,7 @@ def plot_predictions(
     axes[0].plot([0, max_val], [0, max_val], "r--", linewidth=2, label="Perfect Prediction")
     axes[0].set_xlabel("True RUL", fontsize=12)
     axes[0].set_ylabel("Predicted RUL", fontsize=12)
-    axes[0].set_title(
-        f"{model_name} - Prediction vs Actual", fontsize=14, fontweight="bold"
-    )
+    axes[0].set_title(f"{model_name} - Prediction vs Actual", fontsize=14, fontweight="bold")
     axes[0].legend(loc="best", fontsize=10)
     axes[0].grid(alpha=0.3)
 
@@ -152,9 +144,7 @@ def plot_error_distribution(
     )
     axes[0].set_xlabel("Prediction Error (Pred - True)", fontsize=12)
     axes[0].set_ylabel("Frequency", fontsize=12)
-    axes[0].set_title(
-        f"{model_name} - Error Distribution", fontsize=14, fontweight="bold"
-    )
+    axes[0].set_title(f"{model_name} - Error Distribution", fontsize=14, fontweight="bold")
     axes[0].legend(loc="best", fontsize=10)
     axes[0].grid(alpha=0.3)
 
@@ -176,9 +166,7 @@ def plot_error_distribution(
     )
     axes[1].set_xlabel("Absolute Error", fontsize=12)
     axes[1].set_ylabel("Frequency", fontsize=12)
-    axes[1].set_title(
-        f"{model_name} - Absolute Error Distribution", fontsize=14, fontweight="bold"
-    )
+    axes[1].set_title(f"{model_name} - Absolute Error Distribution", fontsize=14, fontweight="bold")
     axes[1].legend(loc="best", fontsize=10)
     axes[1].grid(alpha=0.3)
 
@@ -275,9 +263,7 @@ def plot_sample_predictions(
     fig, ax = plt.subplots(figsize=(14, 6))
 
     ax.plot(indices, y_true[:n_samples], "b-", label="True RUL", linewidth=2, alpha=0.8)
-    ax.plot(
-        indices, y_pred[:n_samples], "r--", label="Predicted RUL", linewidth=2, alpha=0.8
-    )
+    ax.plot(indices, y_pred[:n_samples], "r--", label="Predicted RUL", linewidth=2, alpha=0.8)
     ax.fill_between(
         indices,
         y_true[:n_samples],
@@ -289,9 +275,7 @@ def plot_sample_predictions(
 
     ax.set_xlabel("Sample Index", fontsize=12)
     ax.set_ylabel("RUL (cycles)", fontsize=12)
-    ax.set_title(
-        f"{model_name} - Sample Predictions", fontsize=14, fontweight="bold"
-    )
+    ax.set_title(f"{model_name} - Sample Predictions", fontsize=14, fontweight="bold")
     ax.legend(loc="best", fontsize=10)
     ax.grid(alpha=0.3)
 
@@ -339,9 +323,7 @@ def create_evaluation_report(
 
     # Generate visualizations
     if history:
-        plot_training_history(
-            history, model_name, save_path=f"{save_dir}/{model_name}_history.png"
-        )
+        plot_training_history(history, model_name, save_path=f"{save_dir}/{model_name}_history.png")
 
     plot_predictions(
         y_true, y_pred, model_name, save_path=f"{save_dir}/{model_name}_predictions.png"

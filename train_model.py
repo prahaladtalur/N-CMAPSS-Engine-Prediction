@@ -42,6 +42,7 @@ from wandb.integration.keras import WandbCallback
 # Load environment variables from .env file (if present)
 try:
     from dotenv import load_dotenv
+
     env_path = Path(__file__).parent / ".env"
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
@@ -63,6 +64,7 @@ from src.search import run_hparam_search
 # ============================================================================
 # Training Functions (moved from src/models/train.py)
 # ============================================================================
+
 
 def prepare_sequences(
     X: List[np.ndarray],
@@ -487,15 +489,15 @@ def train_lstm(
 ) -> Tuple[keras.Model, Dict[str, Any]]:
     """
     Legacy function - trains LSTM model.
-    
+
     .. deprecated:: 0.1.0
         Use :func:`train_model` with ``model_name="lstm"`` instead.
-    
+
     This function is kept for backwards compatibility but will be removed
     in a future version. Migrate to:
-    
+
     .. code-block:: python
-    
+
         model, history, metrics = train_model(
             dev_X=dev_X,
             dev_y=dev_y,
@@ -530,36 +532,37 @@ def train_lstm(
 # JSON Config Loading
 # ============================================================================
 
+
 def load_config_from_json(config_path: str) -> Dict[str, Any]:
     """
     Load training configuration from a JSON file.
-    
+
     Supports both simple config files and wandb sweep config files.
     For sweep configs, uses the first parameter combination (or base_config if no parameters).
-    
+
     Args:
         config_path: Path to JSON configuration file
-        
+
     Returns:
         Dictionary with model_name, config, fd, project_name, normalize, visualize
     """
     config_file = Path(config_path)
     if not config_file.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
-    
+
     with open(config_file, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     # Check if this is a sweep config (has 'parameters' or 'method')
     is_sweep_config = "parameters" in data or "method" in data
-    
+
     if is_sweep_config:
         # Extract model name
         model_name = data.get("model", "lstm")
-        
+
         # Get base config
         base_config = data.get("base_config", {})
-        
+
         # If there are parameters, use the first combination
         # For grid search, this would be the first combination
         # For random search, we'll just use base_config
@@ -573,7 +576,7 @@ def load_config_from_json(config_path: str) -> Dict[str, Any]:
             config = {**base_config, **param_values}
         else:
             config = base_config
-        
+
         # Extract other settings
         result = {
             "model_name": model_name,
@@ -593,13 +596,14 @@ def load_config_from_json(config_path: str) -> Dict[str, Any]:
             "normalize": data.get("normalize", True),
             "visualize": data.get("visualize", True),
         }
-    
+
     return result
 
 
 # ============================================================================
 # CLI Functions
 # ============================================================================
+
 
 def print_models_info():
     """Print information about all available models."""
@@ -726,9 +730,7 @@ Examples:
     parser.add_argument(
         "--dense-units", type=int, default=32, help="Dense layer units (default: 32)"
     )
-    parser.add_argument(
-        "--dropout", type=float, default=0.2, help="Dropout rate (default: 0.2)"
-    )
+    parser.add_argument("--dropout", type=float, default=0.2, help="Dropout rate (default: 0.2)")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate (default: 0.001)")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size (default: 32)")
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs (default: 50)")
@@ -839,14 +841,14 @@ Examples:
             print(f"Model: {json_config['model_name']}")
             print(f"FD: {json_config['fd']}")
             print(f"Config: {json_config['config']}")
-            
+
             # Override args with JSON config values
             args.model = json_config["model_name"]
             args.fd = json_config["fd"]
             args.project = json_config["project_name"]
             args.no_normalize = not json_config["normalize"]
             args.no_visualize = not json_config["visualize"]
-            
+
             # Merge JSON config into training config
             json_training_config = json_config["config"]
         except Exception as e:
@@ -881,9 +883,7 @@ Examples:
         "patience_lr_reduce": json_training_config.get(
             "patience_lr_reduce", args.patience_lr_reduce
         ),
-        "use_early_stop": json_training_config.get(
-            "use_early_stop", not args.no_early_stop
-        ),
+        "use_early_stop": json_training_config.get("use_early_stop", not args.no_early_stop),
     }
 
     # Compare mode

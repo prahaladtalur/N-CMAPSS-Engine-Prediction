@@ -33,6 +33,7 @@ def train_lstm(*args, **kwargs):
 
     return _train_lstm(*args, **kwargs)
 
+
 from src.models.architectures import (
     ModelRegistry,
     get_model,
