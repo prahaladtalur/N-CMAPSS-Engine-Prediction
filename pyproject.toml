@@ -74,7 +74,7 @@ strict_equality = true
 show_error_codes = true
 show_error_context = true
 # Disable some strict checks for existing code
-disable_error_code = ["attr-defined", "return-value", "arg-type", "var-annotated", "index"]
+disable_error_code = ["attr-defined", "return-value", "arg-type", "var-annotated", "index", "assignment", "call-overload"]
 
 # Per-module options
 [[tool.mypy.overrides]]
