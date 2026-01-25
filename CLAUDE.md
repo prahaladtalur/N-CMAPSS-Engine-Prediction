@@ -4,6 +4,15 @@
 
 This is an ML project for predicting Remaining Useful Life (RUL) of NASA turbofan engines using the N-CMAPSS dataset. It provides a unified pipeline with 14 neural network architectures, automatic data loading, and W&B experiment tracking.
 
+## Development Workflow
+
+1. **Create a GitHub issue** with a full description of the work to be done
+2. **Create a feature branch** from main to work on the issue
+3. **Develop and commit** changes to the branch
+4. **Open a PR** when work is complete, referencing the issue
+5. **Wait for CI to pass** before merging
+6. **Merge** the PR into main
+
 ## Quick Commands
 
 ```bash
