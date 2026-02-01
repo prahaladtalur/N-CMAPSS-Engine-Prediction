@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-**Winner: Transformer** — best across every metric. Top 3 (Transformer, WaveNet, CNN-GRU) are all within ~8% of each other and all exceed 97% Acc@20. CNN-LSTM is the only model that failed to converge.
+**Winner: Transformer + asymmetric loss** — RMSE 6.75, PHM 0.81, R² 0.90. Switching from MSE to asymmetric loss (α=2) and training longer (patience=20) improved RMSE by 3.6% and PHM by 8% over the MSE baseline. Top 3 architectures (Transformer, WaveNet, CNN-GRU) remain within ~12% of each other. CNN-LSTM is the only model that failed to converge.
 
 ---
 
@@ -17,7 +17,8 @@
 
 | Rank | Model | RMSE ↓ | MAE ↓ | PHM ↓ | Acc@10 ↑ | Acc@15 ↑ | Acc@20 ↑ | R² ↑ |
 |------|-------|--------|-------|-------|----------|----------|----------|------|
-| 1 | **Transformer** | **7.01** | **4.70** | **0.88** | **85.9%** | **94.1%** | **98.2%** | **0.89** |
+| 1 | **Transformer (asym)** | **6.75** | **4.75** | **0.81** | **88.0%** | **94.7%** | **98.5%** | **0.90** |
+| — | Transformer (MSE) | 7.01 | 4.70 | 0.88 | 85.9% | 94.1% | 98.2% | 0.89 |
 | 2 | WaveNet | 7.44 | 4.99 | 0.99 | 83.6% | 91.8% | 97.1% | 0.88 |
 | 3 | CNN-GRU | 7.58 | 5.71 | 1.04 | 85.6% | 93.0% | 97.1% | 0.88 |
 | 4 | TCN | 8.36 | 6.22 | 1.17 | 78.0% | 90.3% | 97.7% | 0.85 |
@@ -30,8 +31,9 @@
 
 ## Key Findings
 
-### Transformer is the clear winner
-- Best RMSE (7.01), MAE (4.70), PHM (0.88), R² (0.89), and Acc@10/15/20
+### Transformer + asymmetric loss is the clear winner
+- Best RMSE (6.75), PHM (0.81), R² (0.90), and Acc@10/15/20
+- Asymmetric loss (α=2) penalises late predictions 2× more than early ones, aligning the training objective with the PHM safety metric. This dropped PHM 8% and RMSE 3.6% vs the MSE baseline.
 - With seq_len=1000 the O(n²) self-attention is fully tractable
 - Previously failed on full 20k sequences due to memory — truncation fixed it
 
@@ -54,7 +56,8 @@ CNN-LSTM completely failed (R² ≈ 0) while CNN-GRU ranked 3rd. The GRU back-en
 ## Training Notes
 
 - Full 20k sequences caused OOM when running multiple models. Truncating to 1000 timesteps reduced memory ~20× with no loss in model quality.
-- All models trained for 30 epochs with early stopping (patience=10) and LR reduction (patience=5).
+- Architecture comparison (ranks 2–8) used 30 epochs, early stopping patience=10, LR reduction patience=5, MSE loss.
+- Final Transformer run used asymmetric loss (α=2), early stopping patience=20, LR reduction patience=8. Early stopping fired at epoch 41 (best epoch 21). LR was halved twice (→0.0005 at epoch 18, →0.00025 at epoch 37).
 - Transformer is slower per epoch (~30s vs ~2s for TCN) but converges to better final performance.
 
 ---
@@ -64,3 +67,4 @@ CNN-LSTM completely failed (R² ≈ 0) while CNN-GRU ranked 3rd. The GRU back-en
 - `results/comparison/full_leaderboard.png` — complete 8-model comparison
 - `results/comparison/production_sota_comparison.png` — first 5-model round
 - Individual model plots in `results/{model}-production/`
+- `results/transformer-asymmetric-100ep/` — final best model (asymmetric loss)
