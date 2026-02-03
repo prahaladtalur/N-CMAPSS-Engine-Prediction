@@ -24,9 +24,10 @@ build/
 *.ipynb_checkpoints
 
 # Models
-models/saved/
+models/
 *.pth
 *.pt
+*.pkl
 
 # Logs
 logs/
