@@ -79,18 +79,71 @@ def rul_accuracy(y_true: np.ndarray, y_pred: np.ndarray, threshold: float = 10.0
     return (abs_error <= threshold).mean() * 100
 
 
-def compute_all_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+def normalized_rmse(y_true: np.ndarray, y_pred: np.ndarray, y_min: float, y_max: float) -> float:
+    """
+    Calculate RMSE on normalized RUL values (scaled to [0, 1]).
+
+    This is the standard metric used in papers for comparing RUL prediction models.
+
+    Args:
+        y_true: True RUL values (in cycles)
+        y_pred: Predicted RUL values (in cycles)
+        y_min: Minimum RUL value from training set
+        y_max: Maximum RUL value from training set
+
+    Returns:
+        Normalized RMSE (0 to ~1 scale)
+    """
+    y_range = y_max - y_min
+    if y_range == 0:
+        return 0.0
+    y_true_norm = (y_true - y_min) / y_range
+    y_pred_norm = (y_pred - y_min) / y_range
+    return np.sqrt(mean_squared_error(y_true_norm, y_pred_norm))
+
+
+def normalized_mae(y_true: np.ndarray, y_pred: np.ndarray, y_min: float, y_max: float) -> float:
+    """
+    Calculate MAE on normalized RUL values (scaled to [0, 1]).
+
+    This is the standard metric used in papers for comparing RUL prediction models.
+
+    Args:
+        y_true: True RUL values (in cycles)
+        y_pred: Predicted RUL values (in cycles)
+        y_min: Minimum RUL value from training set
+        y_max: Maximum RUL value from training set
+
+    Returns:
+        Normalized MAE (0 to ~1 scale)
+    """
+    y_range = y_max - y_min
+    if y_range == 0:
+        return 0.0
+    y_true_norm = (y_true - y_min) / y_range
+    y_pred_norm = (y_pred - y_min) / y_range
+    return mean_absolute_error(y_true_norm, y_pred_norm)
+
+
+def compute_all_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_min: float = None,
+    y_max: float = None,
+) -> Dict[str, float]:
     """
     Compute all RUL evaluation metrics.
 
     Args:
         y_true: True RUL values
         y_pred: Predicted RUL values
+        y_min: Minimum RUL for normalization (optional)
+        y_max: Maximum RUL for normalization (optional)
 
     Returns:
         Dictionary with all metrics
     """
-    return {
+    metrics = {
         "mse": mean_squared_error(y_true, y_pred),
         "rmse": rmse(y_true, y_pred),
         "mae": mean_absolute_error(y_true, y_pred),
@@ -103,6 +156,13 @@ def compute_all_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, flo
         "accuracy_15": rul_accuracy(y_true, y_pred, threshold=15),
         "accuracy_20": rul_accuracy(y_true, y_pred, threshold=20),
     }
+
+    # Add normalized metrics if y_min and y_max are provided
+    if y_min is not None and y_max is not None:
+        metrics["rmse_normalized"] = normalized_rmse(y_true, y_pred, y_min, y_max)
+        metrics["mae_normalized"] = normalized_mae(y_true, y_pred, y_min, y_max)
+
+    return metrics
 
 
 def format_metrics(metrics: Dict[str, float]) -> str:
@@ -124,6 +184,17 @@ def format_metrics(metrics: Dict[str, float]) -> str:
         f"  Accuracy@15:      {metrics['accuracy_15']:.2f}%",
         f"  Accuracy@20:      {metrics['accuracy_20']:.2f}%",
     ]
+
+    # Add normalized metrics if available
+    if "rmse_normalized" in metrics:
+        lines.extend(
+            [
+                "-" * 40,
+                f"  RMSE (normalized):{metrics['rmse_normalized']:.4f}",
+                f"  MAE (normalized): {metrics['mae_normalized']:.4f}",
+            ]
+        )
+
     return "\n".join(lines)
 
 

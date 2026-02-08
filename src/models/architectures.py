@@ -57,6 +57,26 @@ class ModelRegistry:
         return model_class.build(input_shape, **kwargs)
 
 
+def asymmetric_mse(alpha: float = 2.0):
+    """
+    Asymmetric MSE loss that penalizes late RUL predictions more heavily.
+
+    In RUL prediction, over-predicting remaining life (y_pred > y_true) is
+    dangerous — it risks operating past failure.  This loss applies a penalty
+    multiplier of ``alpha`` to squared errors when the prediction exceeds the
+    true value, while standard squared error is used for early predictions.
+
+    Args:
+        alpha: Penalty multiplier for late predictions (default 2.0).
+    """
+
+    def loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        error = y_pred - y_true
+        return tf.reduce_mean(tf.where(error >= 0, alpha * tf.square(error), tf.square(error)))
+
+    return loss
+
+
 class BaseModel(ABC):
     """Base class for all models."""
 
@@ -78,7 +98,7 @@ class BaseModel(ABC):
         optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
         model.compile(
             optimizer=optimizer,
-            loss="mse",
+            loss=asymmetric_mse(),
             metrics=["mae", "mape"],
         )
         return model

@@ -1,0 +1,20 @@
+{
+  "model_name": "transformer",
+  "fd": 1,
+  "project_name": "n-cmapss-rul-prediction",
+  "normalize": true,
+  "visualize": true,
+  "config": {
+    "units": 128,
+    "dense_units": 64,
+    "dropout_rate": 0.2,
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "epochs": 100,
+    "max_sequence_length": 1000,
+    "patience_early_stop": 20,
+    "patience_lr_reduce": 8,
+    "num_heads": 8,
+    "num_layers": 4
+  }
+}

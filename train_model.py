@@ -60,7 +60,6 @@ from src.models.architectures import (
 from src.utils.metrics import compute_all_metrics, format_metrics
 from src.search import run_hparam_search
 
-
 # ============================================================================
 # Training Functions (moved from src/models/train.py)
 # ============================================================================
@@ -210,6 +209,11 @@ def train_model(
     X_train, y_train = prepare_sequences(dev_X, dev_y, config["max_sequence_length"])
     print(f"Training data shape: X={X_train.shape}, y={y_train.shape}")
 
+    # Calculate RUL normalization range for metrics
+    y_min = float(y_train.min())
+    y_max = float(y_train.max())
+    print(f"RUL range: [{y_min:.2f}, {y_max:.2f}] cycles")
+
     # Prepare validation data
     X_val, y_val = None, None
     if val_X is not None and val_y is not None:
@@ -303,7 +307,7 @@ def train_model(
     if X_test is not None and y_test is not None:
         print("\nEvaluating on test set...")
         y_pred = model.predict(X_test, verbose=0).flatten()
-        test_metrics = compute_all_metrics(y_test, y_pred)
+        test_metrics = compute_all_metrics(y_test, y_pred, y_min=y_min, y_max=y_max)
 
         print(format_metrics(test_metrics))
 
@@ -368,6 +372,11 @@ def train_model(
         final_metrics["final_val_mae"] = history.history["val_mae"][-1]
 
     wandb.log(final_metrics)
+
+    # Save RUL normalization range to wandb summary
+    wandb.summary["rul_min"] = y_min
+    wandb.summary["rul_max"] = y_max
+
     wandb.finish()
 
     return model, history.history, test_metrics
