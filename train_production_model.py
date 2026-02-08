@@ -99,15 +99,24 @@ def train_production_cnn_gru(
         json.dump(serializable_metrics, f, indent=2)
     print(f"✓ Metrics saved to: {metrics_path}")
 
-    # Save the scaler (re-fit on dev data to match training normalization)
-    dev_X_prepared, _ = prepare_sequences(dev_X, dev_y, max_sequence_length=max_seq_length)
+    # Save the feature scaler (re-fit on dev data to match training normalization)
+    dev_X_prepared, dev_y_prepared = prepare_sequences(
+        dev_X, dev_y, max_sequence_length=max_seq_length
+    )
     scaler = StandardScaler()
     original_shape = dev_X_prepared.shape
     scaler.fit(dev_X_prepared.reshape(-1, original_shape[-1]))
     scaler_path = os.path.join(output_dir, "scaler.pkl")
     with open(scaler_path, "wb") as f:
         pickle.dump(scaler, f)
-    print(f"✓ Scaler saved to: {scaler_path}")
+    print(f"✓ Feature scaler saved to: {scaler_path}")
+
+    # Save the RUL normalization range (for normalized metrics)
+    rul_scaler = {"y_min": float(dev_y_prepared.min()), "y_max": float(dev_y_prepared.max())}
+    rul_scaler_path = os.path.join(output_dir, "rul_scaler.json")
+    with open(rul_scaler_path, "w") as f:
+        json.dump(rul_scaler, f, indent=2)
+    print(f"✓ RUL scaler saved to: {rul_scaler_path}")
 
     print("\n" + "=" * 70)
     print("Production Model Summary")

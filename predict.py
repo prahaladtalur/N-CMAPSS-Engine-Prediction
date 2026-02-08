@@ -55,15 +55,28 @@ class RULPredictor:
 
         self.max_seq_length = self.config.get("max_sequence_length", 1000)
 
-        # Load scaler
+        # Load feature scaler
         scaler_path = os.path.join(self.model_dir, "scaler.pkl")
         if os.path.exists(scaler_path):
             with open(scaler_path, "rb") as f:
                 self.scaler = pickle.load(f)
-            print(f"✓ Scaler loaded from: {scaler_path}")
+            print(f"✓ Feature scaler loaded from: {scaler_path}")
         else:
             self.scaler = None
-            print("⚠️  No scaler found — predictions may be inaccurate")
+            print("⚠️  No feature scaler found — predictions may be inaccurate")
+
+        # Load RUL scaler (for normalized metrics)
+        rul_scaler_path = os.path.join(self.model_dir, "rul_scaler.json")
+        if os.path.exists(rul_scaler_path):
+            with open(rul_scaler_path, "r") as f:
+                rul_scaler = json.load(f)
+                self.y_min = rul_scaler["y_min"]
+                self.y_max = rul_scaler["y_max"]
+            print(f"✓ RUL scaler loaded from: {rul_scaler_path}")
+        else:
+            self.y_min = None
+            self.y_max = None
+            print("⚠️  No RUL scaler found — normalized metrics unavailable")
 
     @staticmethod
     def _asymmetric_mse(alpha: float = 2.0):
@@ -155,7 +168,7 @@ class RULPredictor:
         y_true = np.array(all_true)
         y_pred = np.array(all_pred)
 
-        metrics = compute_all_metrics(y_true, y_pred)
+        metrics = compute_all_metrics(y_true, y_pred, y_min=self.y_min, y_max=self.y_max)
         print("\n" + format_metrics(metrics))
 
         if visualize:
@@ -245,13 +258,16 @@ def main():
 
         # Evaluate all cycles
         y_true, y_pred = predictor.predict_unit(unit_X, unit_y)
-        metrics = compute_all_metrics(y_true, y_pred)
+        metrics = compute_all_metrics(y_true, y_pred, y_min=predictor.y_min, y_max=predictor.y_max)
         print(f"\n  All cycles:")
         print(f"    RMSE:    {metrics['rmse']:.2f}")
         print(f"    MAE:     {metrics['mae']:.2f}")
         print(f"    R²:      {metrics['r2']:.4f}")
         print(f"    Acc@10:  {metrics['accuracy_10']:.1f}%")
         print(f"    Acc@20:  {metrics['accuracy_20']:.1f}%")
+        if "rmse_normalized" in metrics:
+            print(f"    RMSE(norm): {metrics['rmse_normalized']:.4f}")
+            print(f"    MAE(norm):  {metrics['mae_normalized']:.4f}")
 
     # Full test set evaluation
     else:
