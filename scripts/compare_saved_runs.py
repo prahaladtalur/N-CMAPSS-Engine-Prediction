@@ -23,7 +23,6 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.utils.training_viz import plot_model_comparison
 import matplotlib.pyplot as plt
 
-
 DEFAULT_MODELS = ("attention_lstm", "tcn", "cnn_gru")
 
 

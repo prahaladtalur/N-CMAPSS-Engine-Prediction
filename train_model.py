@@ -60,7 +60,6 @@ from src.models.architectures import (
 from src.utils.metrics import compute_all_metrics, format_metrics
 from src.search import run_hparam_search
 
-
 # ============================================================================
 # Training Functions (moved from src/models/train.py)
 # ============================================================================
@@ -210,6 +209,11 @@ def train_model(
     X_train, y_train = prepare_sequences(dev_X, dev_y, config["max_sequence_length"])
     print(f"Training data shape: X={X_train.shape}, y={y_train.shape}")
 
+    # Calculate RUL normalization range for metrics
+    y_min = float(y_train.min())
+    y_max = float(y_train.max())
+    print(f"RUL range: [{y_min:.2f}, {y_max:.2f}] cycles")
+
     # Prepare validation data
     X_val, y_val = None, None
     if val_X is not None and val_y is not None:
@@ -303,12 +307,50 @@ def train_model(
     if X_test is not None and y_test is not None:
         print("\nEvaluating on test set...")
         y_pred = model.predict(X_test, verbose=0).flatten()
-        test_metrics = compute_all_metrics(y_test, y_pred)
+        test_metrics = compute_all_metrics(y_test, y_pred, y_min=y_min, y_max=y_max)
 
         print(format_metrics(test_metrics))
 
-        # Log all metrics to wandb
-        wandb_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
+        # SOTA benchmarks from MDFA paper (https://www.mdpi.com/2076-3417/15/17/9813)
+        SOTA_TARGETS = {
+            "rmse_normalized": 0.032,  # Best MDFA result
+            "mae_normalized": 0.026,  # Best MDFA result
+            "r2": 0.987,  # MDFA baseline
+        }
+
+        # Log all metrics to wandb with test/ prefix
+        wandb_metrics = {f"test/{k}": v for k, v in test_metrics.items()}
+
+        # Calculate and log gaps from SOTA
+        if "rmse_normalized" in test_metrics and "mae_normalized" in test_metrics:
+            rmse_gap = test_metrics["rmse_normalized"] / SOTA_TARGETS["rmse_normalized"]
+            mae_gap = test_metrics["mae_normalized"] / SOTA_TARGETS["mae_normalized"]
+            r2_gap = SOTA_TARGETS["r2"] - test_metrics["r2"]
+
+            wandb_metrics.update(
+                {
+                    "test/rmse_normalized_gap": rmse_gap,
+                    "test/mae_normalized_gap": mae_gap,
+                    "test/r2_gap": r2_gap,
+                    "sota/rmse_normalized_target": SOTA_TARGETS["rmse_normalized"],
+                    "sota/mae_normalized_target": SOTA_TARGETS["mae_normalized"],
+                    "sota/r2_target": SOTA_TARGETS["r2"],
+                }
+            )
+
+            print(f"\n{'='*60}")
+            print("Gap from SOTA (MDFA paper):")
+            print(
+                f"  RMSE (normalized): {test_metrics['rmse_normalized']:.4f} vs {SOTA_TARGETS['rmse_normalized']:.4f} (gap: {rmse_gap:.2f}x)"
+            )
+            print(
+                f"  MAE (normalized):  {test_metrics['mae_normalized']:.4f} vs {SOTA_TARGETS['mae_normalized']:.4f} (gap: {mae_gap:.2f}x)"
+            )
+            print(
+                f"  R² Score:          {test_metrics['r2']:.4f} vs {SOTA_TARGETS['r2']:.4f} (gap: {r2_gap:.4f})"
+            )
+            print("=" * 60)
+
         wandb.log(wandb_metrics)
 
         # Generate visualizations if requested
@@ -351,11 +393,33 @@ def train_model(
             # Log plots to wandb
             wandb.log(
                 {
-                    "training_history": wandb.Image(f"{results_dir}/training_history.png"),
-                    "predictions": wandb.Image(f"{results_dir}/predictions.png"),
-                    "error_distribution": wandb.Image(f"{results_dir}/error_distribution.png"),
+                    "charts/training_history": wandb.Image(f"{results_dir}/training_history.png"),
+                    "charts/predictions": wandb.Image(f"{results_dir}/predictions.png"),
+                    "charts/error_distribution": wandb.Image(
+                        f"{results_dir}/error_distribution.png"
+                    ),
                 }
             )
+
+            # Create W&B Table for interactive prediction visualization (sample 500 points)
+            sample_size = min(500, len(y_test))
+            sample_indices = np.random.choice(len(y_test), sample_size, replace=False)
+
+            predictions_table = wandb.Table(
+                columns=["true_rul", "predicted_rul", "error", "abs_error", "pct_error"],
+                data=[
+                    [
+                        float(y_test[i]),
+                        float(y_pred[i]),
+                        float(y_pred[i] - y_test[i]),
+                        float(abs(y_pred[i] - y_test[i])),
+                        float(abs(y_pred[i] - y_test[i]) / max(y_test[i], 1e-8) * 100),
+                    ]
+                    for i in sample_indices
+                ],
+            )
+
+            wandb.log({"predictions_table": predictions_table})
 
     # Log final training metrics
     final_metrics = {
@@ -368,6 +432,63 @@ def train_model(
         final_metrics["final_val_mae"] = history.history["val_mae"][-1]
 
     wandb.log(final_metrics)
+
+    # Enhanced W&B run summary with comprehensive metadata
+    summary_data = {
+        # Model Architecture
+        "model/architecture": model_name,
+        "model/num_parameters": int(model.count_params()),
+        "model/num_layers": len(model.layers),
+        # Dataset Info
+        "data/rul_min": float(y_min),
+        "data/rul_max": float(y_max),
+        "data/rul_range": float(y_max - y_min),
+        "data/train_samples": int(len(y_train)),
+        "data/input_timesteps": int(input_shape[0]),
+        "data/num_features": int(input_shape[1]),
+        # Training Config
+        "training/epochs_trained": int(len(history.history["loss"])),
+        "training/final_train_loss": float(history.history["loss"][-1]),
+        "training/final_train_mae": float(history.history["mae"][-1]),
+        "training/batch_size": int(config["batch_size"]),
+        "training/learning_rate": float(config["learning_rate"]),
+    }
+
+    # Add validation metrics if available
+    if validation_data:
+        summary_data.update(
+            {
+                "data/val_samples": int(len(y_val)),
+                "training/final_val_loss": float(history.history["val_loss"][-1]),
+                "training/final_val_mae": float(history.history["val_mae"][-1]),
+            }
+        )
+
+    # Add test metrics if available
+    if test_metrics:
+        summary_data.update(
+            {
+                "data/test_samples": int(len(y_test)),
+                "results/best_rmse": float(test_metrics["rmse"]),
+                "results/best_mae": float(test_metrics["mae"]),
+                "results/best_r2": float(test_metrics["r2"]),
+                "results/best_phm_score": float(test_metrics["phm_score_normalized"]),
+            }
+        )
+
+        # Add normalized metrics and SOTA gaps if available
+        if "rmse_normalized" in test_metrics:
+            summary_data.update(
+                {
+                    "results/best_rmse_normalized": float(test_metrics["rmse_normalized"]),
+                    "results/best_mae_normalized": float(test_metrics["mae_normalized"]),
+                    "results/rmse_norm_gap_vs_sota": float(test_metrics["rmse_normalized"] / 0.032),
+                    "results/mae_norm_gap_vs_sota": float(test_metrics["mae_normalized"] / 0.026),
+                }
+            )
+
+    wandb.summary.update(summary_data)
+
     wandb.finish()
 
     return model, history.history, test_metrics
@@ -617,7 +738,7 @@ def print_models_info():
         "RNN-based Models": ["lstm", "bilstm", "gru", "bigru", "attention_lstm", "resnet_lstm"],
         "Convolutional Models": ["tcn", "wavenet"],
         "Hybrid Models": ["cnn_lstm", "cnn_gru", "inception_lstm"],
-        "Attention-based Models": ["transformer"],
+        "Attention-based Models": ["transformer", "mdfa"],
         "Baseline": ["mlp"],
     }
 
