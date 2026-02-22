@@ -19,6 +19,8 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from src.models.mdfa import MDFAModule
 from src.models.cnn_lstm_attention import build_cnn_lstm_attention_model
+from src.models.cata_tcn import build_cata_tcn_model
+from src.models.ttsnet import build_ttsnet_model
 
 
 class ModelRegistry:
@@ -912,6 +914,72 @@ class CNNLSTMAttentionModel(BaseModel):
         return model
 
 
+@ModelRegistry.register("cata_tcn")
+class CATATCNModel(BaseModel):
+    """
+    CATA-TCN model (Channel-and-Temporal Attention TCN).
+
+    Architecture pattern from dual-attention TCN literature for RUL:
+    - Dilated residual TCN backbone
+    - Channel attention to reweight important sensors
+    - Temporal attention to highlight critical degradation windows
+    """
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        kernel_size: int = 3,
+        num_layers: int = 4,
+    ) -> keras.Model:
+        return build_cata_tcn_model(
+            input_shape=input_shape,
+            units=units,
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            learning_rate=learning_rate,
+            kernel_size=kernel_size,
+            num_layers=num_layers,
+        )
+
+
+@ModelRegistry.register("ttsnet")
+class TTSNetModel(BaseModel):
+    """
+    TTSNet model (Transformer + TCN + Self-Attention fusion).
+
+    Hybrid late-fusion design inspired by recent top-performing RUL papers:
+    - Transformer branch for global dependencies
+    - TCN branch for multiscale local temporal features
+    - Self-attention recurrent branch for salient sequence dynamics
+    """
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        num_heads: int = 4,
+        num_transformer_layers: int = 2,
+        kernel_size: int = 3,
+    ) -> keras.Model:
+        return build_ttsnet_model(
+            input_shape=input_shape,
+            units=units,
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            learning_rate=learning_rate,
+            num_heads=num_heads,
+            num_transformer_layers=num_transformer_layers,
+            kernel_size=kernel_size,
+        )
+
+
 def get_model(
     model_name: str,
     input_shape: Tuple[int, int],
@@ -957,6 +1025,8 @@ def get_model_info() -> Dict[str, str]:
         "transformer": "Transformer encoder - self-attention based, very SOTA",
         "mdfa": "MDFA - Multi-scale dilated fusion attention (paper SOTA, RMSE_norm 0.021-0.032)",
         "cnn_lstm_attention": "CNN-LSTM-Attention - 2024 SOTA (CMAPSS RMSE 13.907-16.637)",
+        "cata_tcn": "CATA-TCN - Channel+Temporal Attention over TCN backbone",
+        "ttsnet": "TTSNet - Transformer+TCN+Self-Attention late-fusion hybrid",
         # Baseline
         "mlp": "Simple MLP - baseline for comparison (no temporal modeling)",
     }
@@ -966,10 +1036,10 @@ def get_model_recommendations() -> Dict[str, list]:
     """Get model recommendations for different use cases."""
     return {
         "quick_baseline": ["mlp", "gru"],
-        "best_accuracy": ["cnn_lstm_attention", "mdfa", "transformer", "attention_lstm"],
+        "best_accuracy": ["ttsnet", "cata_tcn", "cnn_lstm_attention", "mdfa", "transformer"],
         "fastest_training": ["gru", "cnn_gru", "tcn"],
         "most_interpretable": ["lstm", "attention_lstm"],
-        "long_sequences": ["mdfa", "tcn", "wavenet", "transformer"],
+        "long_sequences": ["ttsnet", "mdfa", "tcn", "wavenet", "transformer"],
         "limited_data": ["gru", "lstm"],
-        "complex_patterns": ["cnn_lstm_attention", "mdfa", "transformer", "wavenet"],
+        "complex_patterns": ["ttsnet", "cata_tcn", "cnn_lstm_attention", "mdfa", "transformer"],
     }
