@@ -21,6 +21,9 @@ from src.models.mdfa import MDFAModule
 from src.models.cnn_lstm_attention import build_cnn_lstm_attention_model
 from src.models.cata_tcn import build_cata_tcn_model
 from src.models.ttsnet import build_ttsnet_model
+from src.models.atcn import build_atcn_model
+from src.models.sparse_transformer_bigrcu import build_sparse_transformer_bigrcu_model
+from src.models.mstcn import build_mstcn_model
 
 
 class ModelRegistry:
@@ -980,6 +983,140 @@ class TTSNetModel(BaseModel):
         )
 
 
+@ModelRegistry.register("atcn")
+class ATCNModel(BaseModel):
+    """
+    ATCN model (Attention-Based Temporal Convolutional Network).
+
+    State-of-the-art architecture from:
+    "An attention-based temporal convolutional network method for predicting
+     remaining useful life of aero-engine" (2023)
+
+    Architecture:
+        1. Improved Self-Attention (ISA) with learnable position embeddings
+        2. TCN blocks with exponential dilation [1, 2, 4, 8]
+        3. Squeeze-Excitation channel attention
+        4. Dense layers for RUL prediction
+
+    Key advantages:
+        - Dual attention (temporal + channel) for comprehensive feature weighting
+        - TCN backbone for long-term dependencies
+        - Simpler than multi-branch architectures
+    """
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        num_heads: int = 4,
+        kernel_size: int = 3,
+        num_tcn_layers: int = 4,
+    ) -> keras.Model:
+        return build_atcn_model(
+            input_shape=input_shape,
+            units=units,
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            learning_rate=learning_rate,
+            num_heads=num_heads,
+            kernel_size=kernel_size,
+            num_tcn_layers=num_tcn_layers,
+        )
+
+
+@ModelRegistry.register("sparse_transformer_bigrcu")
+class SparseTransformerBiGRCUModel(BaseModel):
+    """
+    Sparse Transformer with Bi-GRCU ensemble model.
+
+    State-of-the-art architecture from:
+    "A sequence ensemble method based on Sparse Transformer with bidirectional
+     gated recurrent convolution unit" (2025)
+
+    Architecture:
+        1. Bi-GRCU branch: Gated fusion of Bi-GRU + Conv1D (short-term)
+        2. Sparse Transformer branch: LRLS-Attention (long-term, efficient)
+        3. Late ensemble fusion via concatenation
+        4. Dense layers for RUL prediction
+
+    Key innovations:
+        - LRLS-Attention: O(T×(k+g)) complexity vs O(T²) full attention
+        - Bi-GRCU: Learnable gating between recurrent and convolutional features
+        - Dual-branch ensemble captures both short and long-term patterns
+        - Most recent architecture (2025)
+    """
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        num_heads: int = 4,
+        num_transformer_layers: int = 2,
+        local_window: int = 32,
+        num_global_tokens: int = 8,
+    ) -> keras.Model:
+        return build_sparse_transformer_bigrcu_model(
+            input_shape=input_shape,
+            units=units,
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            learning_rate=learning_rate,
+            num_heads=num_heads,
+            num_transformer_layers=num_transformer_layers,
+            local_window=local_window,
+            num_global_tokens=num_global_tokens,
+        )
+
+
+@ModelRegistry.register("mstcn")
+class MSTCNModel(BaseModel):
+    """
+    MSTCN model (Multi-Scale Temporal Convolutional Network with Global Fusion Attention).
+
+    State-of-the-art architecture from:
+    "An attention-based multi-scale temporal convolutional network for remaining
+     useful life prediction" (2024)
+
+    Architecture:
+        1. Multi-scale TCN with parallel branches (dilations: 1, 2, 4, 8)
+        2. Global Fusion Attention (GFA): channel + temporal + cross-scale
+        3. Adaptive gating to suppress redundant multi-scale information
+        4. Dense layers for RUL prediction
+
+    Key advantages:
+        - Multi-scale captures patterns at different temporal resolutions
+        - GFA intelligently fuses scales (vs simple concatenation in MDFA)
+        - Adaptive gating reduces information redundancy
+        - Efficient for long sequences
+    """
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        kernel_size: int = 3,
+        dilation_rates: list = None,
+    ) -> keras.Model:
+        return build_mstcn_model(
+            input_shape=input_shape,
+            units=units,
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            learning_rate=learning_rate,
+            kernel_size=kernel_size,
+            dilation_rates=dilation_rates,
+        )
+
+
 def get_model(
     model_name: str,
     input_shape: Tuple[int, int],
@@ -1027,6 +1164,9 @@ def get_model_info() -> Dict[str, str]:
         "cnn_lstm_attention": "CNN-LSTM-Attention - 2024 SOTA (CMAPSS RMSE 13.907-16.637)",
         "cata_tcn": "CATA-TCN - Channel+Temporal Attention over TCN backbone",
         "ttsnet": "TTSNet - Transformer+TCN+Self-Attention late-fusion hybrid",
+        "atcn": "ATCN - Attention-based TCN with ISA and squeeze-excitation (2023 SOTA)",
+        "sparse_transformer_bigrcu": "Sparse Transformer+Bi-GRCU - LRLS attention, most recent (2025 SOTA)",
+        "mstcn": "MSTCN - Multi-scale TCN with Global Fusion Attention (2024 SOTA)",
         # Baseline
         "mlp": "Simple MLP - baseline for comparison (no temporal modeling)",
     }
@@ -1036,10 +1176,10 @@ def get_model_recommendations() -> Dict[str, list]:
     """Get model recommendations for different use cases."""
     return {
         "quick_baseline": ["mlp", "gru"],
-        "best_accuracy": ["ttsnet", "cata_tcn", "cnn_lstm_attention", "mdfa", "transformer"],
+        "best_accuracy": ["sparse_transformer_bigrcu", "mstcn", "ttsnet", "atcn", "cata_tcn", "cnn_lstm_attention", "mdfa", "transformer"],
         "fastest_training": ["gru", "cnn_gru", "tcn"],
         "most_interpretable": ["lstm", "attention_lstm"],
-        "long_sequences": ["ttsnet", "mdfa", "tcn", "wavenet", "transformer"],
+        "long_sequences": ["sparse_transformer_bigrcu", "mstcn", "ttsnet", "atcn", "mdfa", "tcn", "wavenet", "transformer"],
         "limited_data": ["gru", "lstm"],
-        "complex_patterns": ["ttsnet", "cata_tcn", "cnn_lstm_attention", "mdfa", "transformer"],
+        "complex_patterns": ["sparse_transformer_bigrcu", "mstcn", "ttsnet", "atcn", "cata_tcn", "cnn_lstm_attention", "mdfa", "transformer"],
     }
