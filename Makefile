@@ -1,4 +1,4 @@
-.PHONY: install install-dev lint format typecheck check train clean help
+.PHONY: install install-dev lint format typecheck test check train clean help
 
 # Default target
 help:
@@ -8,7 +8,8 @@ help:
 	@echo "  make lint         - Check code formatting with black"
 	@echo "  make format       - Auto-format code with black"
 	@echo "  make typecheck    - Run mypy type checking"
-	@echo "  make check        - Run all checks (lint + typecheck)"
+	@echo "  make test         - Run unit tests with pytest"
+	@echo "  make check        - Run all checks (lint + typecheck + test)"
 	@echo "  make train        - Train default model (LSTM)"
 	@echo "  make clean        - Remove cache and build artifacts"
 
@@ -29,7 +30,10 @@ format:
 typecheck:
 	mypy src/ train_model.py
 
-check: lint typecheck
+test:
+	pytest tests/ -v
+
+check: lint typecheck test
 
 # Training
 train:
