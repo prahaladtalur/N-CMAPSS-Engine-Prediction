@@ -1176,10 +1176,30 @@ def get_model_recommendations() -> Dict[str, list]:
     """Get model recommendations for different use cases."""
     return {
         "quick_baseline": ["mlp", "gru"],
-        "best_accuracy": ["sparse_transformer_bigrcu", "mstcn", "ttsnet", "atcn", "cata_tcn", "cnn_lstm_attention", "mdfa", "transformer"],
+        "best_accuracy": [
+            "sparse_transformer_bigrcu",
+            "mstcn",
+            "ttsnet",
+            "atcn",
+            "cata_tcn",
+            "cnn_lstm_attention",
+            "mdfa",
+            "transformer",
+            "attention_lstm",
+        ],
         "fastest_training": ["gru", "cnn_gru", "tcn"],
         "most_interpretable": ["lstm", "attention_lstm"],
         "long_sequences": ["sparse_transformer_bigrcu", "mstcn", "ttsnet", "atcn", "mdfa", "tcn", "wavenet", "transformer"],
         "limited_data": ["gru", "lstm"],
-        "complex_patterns": ["sparse_transformer_bigrcu", "mstcn", "ttsnet", "atcn", "cata_tcn", "cnn_lstm_attention", "mdfa", "transformer"],
+        "complex_patterns": [
+            "sparse_transformer_bigrcu",
+            "mstcn",
+            "ttsnet",
+            "atcn",
+            "cata_tcn",
+            "cnn_lstm_attention",
+            "mdfa",
+            "transformer",
+            "wavenet",
+        ],
     }

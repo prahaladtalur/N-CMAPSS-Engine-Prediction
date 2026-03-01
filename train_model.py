@@ -744,6 +744,9 @@ def print_models_info():
             "cnn_lstm_attention",
             "cata_tcn",
             "ttsnet",
+            "atcn",
+            "sparse_transformer_bigrcu",
+            "mstcn",
         ],
         "Baseline": ["mlp"],
     }
