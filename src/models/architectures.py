@@ -8,6 +8,7 @@ Includes SOTA RNN architectures:
 - Bidirectional GRU
 - Attention LSTM
 - Temporal Convolutional Network (TCN)
+- Multi-Scale Dilated Fusion Attention (MDFA)
 """
 
 from typing import Tuple, Dict, Any, Optional
@@ -15,6 +16,7 @@ from abc import ABC, abstractmethod
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from src.models.mdfa import MDFAModule
 
 
 class ModelRegistry:
@@ -771,6 +773,79 @@ class InceptionLSTMModel(BaseModel):
         return BaseModel.compile_model(model, learning_rate)
 
 
+@ModelRegistry.register("mdfa")
+class MDFAModel(BaseModel):
+    """
+    Multi-Scale Dilated Fusion Attention (MDFA) model.
+
+    State-of-the-art architecture for RUL prediction from:
+    "Remaining Useful Life Prediction for Aero-Engines Based on Multi-Scale Dilated Fusion Attention Model"
+    https://www.mdpi.com/2076-3417/15/17/9813
+
+    Achieves RMSE_norm 0.021-0.032 on N-CMAPSS (vs our current 0.098).
+
+    Architecture:
+        1. MDFA module with multi-scale dilated convolutions [1, 2, 4, 8]
+        2. Channel attention (emphasizes important sensors)
+        3. Spatial attention (focuses on critical time windows)
+        4. BiLSTM for temporal modeling
+        5. Dense output layer
+
+    Key innovations:
+        - Multi-scale receptive fields: 3, 5, 9, 17 timesteps
+        - Global pooling branch captures sequence-level degradation trends
+        - Dual attention suppresses noise and highlights informative patterns
+    """
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        dilation_rates: list = None,
+    ) -> keras.Model:
+        """
+        Build MDFA model.
+
+        Args:
+            input_shape: (timesteps, features)
+            units: Number of units for MDFA module and BiLSTM
+            dense_units: Units for final dense layer
+            dropout_rate: Dropout rate
+            learning_rate: Learning rate for optimizer
+            dilation_rates: Dilation rates for multi-scale branches (default: [1, 2, 4, 8])
+
+        Returns:
+            Compiled Keras model
+        """
+        if dilation_rates is None:
+            dilation_rates = [1, 2, 4, 8]
+
+        inputs = layers.Input(shape=input_shape)
+
+        # MDFA feature extraction with multi-scale dilated convolutions + attention
+        x = MDFAModule(
+            filters=units, dilation_rates=dilation_rates, kernel_size=3, dropout_rate=dropout_rate
+        )(inputs)
+
+        # Batch normalization for stability
+        x = layers.BatchNormalization()(x)
+
+        # BiLSTM for temporal modeling (bidirectional to capture both past and future context)
+        x = layers.Bidirectional(layers.LSTM(units, return_sequences=False))(x)
+        x = layers.Dropout(dropout_rate)(x)
+
+        # Dense layers
+        x = layers.Dense(dense_units, activation="relu")(x)
+        x = layers.Dropout(dropout_rate)(x)
+        outputs = layers.Dense(1, activation="linear")(x)
+
+        model = keras.Model(inputs=inputs, outputs=outputs, name="mdfa")
+        return BaseModel.compile_model(model, learning_rate)
+
+
 def get_model(
     model_name: str,
     input_shape: Tuple[int, int],
@@ -814,6 +889,7 @@ def get_model_info() -> Dict[str, str]:
         "inception_lstm": "Inception-LSTM - multi-scale feature extraction",
         # Attention-based models
         "transformer": "Transformer encoder - self-attention based, very SOTA",
+        "mdfa": "MDFA - Multi-scale dilated fusion attention (paper SOTA, RMSE_norm 0.021-0.032)",
         # Baseline
         "mlp": "Simple MLP - baseline for comparison (no temporal modeling)",
     }
@@ -823,10 +899,10 @@ def get_model_recommendations() -> Dict[str, list]:
     """Get model recommendations for different use cases."""
     return {
         "quick_baseline": ["mlp", "gru"],
-        "best_accuracy": ["transformer", "attention_lstm", "wavenet", "resnet_lstm"],
+        "best_accuracy": ["mdfa", "transformer", "attention_lstm", "wavenet"],
         "fastest_training": ["gru", "cnn_gru", "tcn"],
         "most_interpretable": ["lstm", "attention_lstm"],
-        "long_sequences": ["tcn", "wavenet", "transformer"],
+        "long_sequences": ["mdfa", "tcn", "wavenet", "transformer"],
         "limited_data": ["gru", "lstm"],
-        "complex_patterns": ["transformer", "inception_lstm", "wavenet"],
+        "complex_patterns": ["mdfa", "transformer", "inception_lstm", "wavenet"],
     }
