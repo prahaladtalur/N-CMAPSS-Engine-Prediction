@@ -31,12 +31,13 @@ except ImportError:
     WANDB_AVAILABLE = False
     print("Warning: wandb not installed. W&B logging disabled.")
 
-# Import training function
+# Import training function and data loader
 import sys
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from train_model import train_and_evaluate
+from train_model import train_model
+from src.data.load_data import get_datasets
 
 SOTA_MODELS = [
     "mdfa",
@@ -56,8 +57,68 @@ SOTA_TARGETS = {
 }
 
 
+def train_and_evaluate(
+    model_name: str,
+    fd: int = 1,
+    epochs: int = 100,
+    visualize: bool = True,
+    project_name: str = "n-cmapss-benchmark",
+) -> Dict[str, Any]:
+    """
+    Load data, train model, and return evaluation metrics.
+
+    Args:
+        model_name: Name of the model to train
+        fd: Flight dataset number (1-7)
+        epochs: Number of training epochs
+        visualize: Whether to generate visualizations
+        project_name: W&B project name
+
+    Returns:
+        Dictionary of evaluation metrics
+    """
+    import wandb
+
+    # Load N-CMAPSS dataset
+    print(f"\nLoading N-CMAPSS FD{fd} dataset...")
+    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=fd)
+    val_X, val_y = val_pair if val_pair else (None, None)
+
+    # Training configuration
+    config = {
+        "epochs": epochs,
+        "batch_size": 32,
+        "learning_rate": 0.001,
+        "patience_early_stop": 10,
+        "patience_lr_reduce": 5,
+    }
+
+    # Train model
+    run_name = f"{model_name}_FD{fd}"
+    model, history, metrics = train_model(
+        dev_X=dev_X,
+        dev_y=dev_y,
+        model_name=model_name,
+        val_X=val_X,
+        val_y=val_y,
+        test_X=test_X,
+        test_y=test_y,
+        config=config,
+        project_name=project_name,
+        run_name=run_name,
+        visualize=visualize,
+    )
+
+    wandb.finish()
+
+    return metrics
+
+
 def benchmark_all_models(
-    fd: int = 1, epochs: int = 100, visualize: bool = True, wandb_project: str = "n-cmapss-benchmark"
+    fd: int = 1,
+    epochs: int = 100,
+    visualize: bool = True,
+    wandb_project: str = "n-cmapss-benchmark",
 ) -> Dict[str, Dict[str, Any]]:
     """
     Train all SOTA models and collect metrics.
@@ -180,7 +241,9 @@ def print_comparison_table(results: Dict[str, Dict[str, Any]], fd: int):
         print("\n⚠️  No valid results to compare")
 
 
-def save_results(results: Dict[str, Dict[str, Any]], fd: int, output_dir: str = "benchmark_results"):
+def save_results(
+    results: Dict[str, Dict[str, Any]], fd: int, output_dir: str = "benchmark_results"
+):
     """Save benchmark results to JSON and CSV files."""
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
@@ -276,15 +339,17 @@ def log_comparison_to_wandb(results: Dict[str, Dict[str, Any]], fd: int, project
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Benchmark all SOTA models on N-CMAPSS dataset"
+    parser = argparse.ArgumentParser(description="Benchmark all SOTA models on N-CMAPSS dataset")
+    parser.add_argument(
+        "--fd", type=int, default=1, choices=range(1, 8), help="Flight dataset (1-7)"
     )
-    parser.add_argument("--fd", type=int, default=1, choices=range(1, 8), help="Flight dataset (1-7)")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument(
         "--no-visualize", action="store_true", help="Disable visualization generation"
     )
-    parser.add_argument("--output-dir", type=str, default="benchmark_results", help="Output directory")
+    parser.add_argument(
+        "--output-dir", type=str, default="benchmark_results", help="Output directory"
+    )
     parser.add_argument(
         "--wandb-project", type=str, default="n-cmapss-benchmark", help="W&B project name"
     )
