@@ -738,7 +738,7 @@ def print_models_info():
         "RNN-based Models": ["lstm", "bilstm", "gru", "bigru", "attention_lstm", "resnet_lstm"],
         "Convolutional Models": ["tcn", "wavenet"],
         "Hybrid Models": ["cnn_lstm", "cnn_gru", "inception_lstm"],
-        "Attention-based Models": ["transformer", "mdfa"],
+        "Attention-based Models": ["transformer", "mdfa", "cnn_lstm_attention"],
         "Baseline": ["mlp"],
     }
 

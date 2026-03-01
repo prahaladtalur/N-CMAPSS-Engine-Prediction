@@ -9,6 +9,7 @@ Includes SOTA RNN architectures:
 - Attention LSTM
 - Temporal Convolutional Network (TCN)
 - Multi-Scale Dilated Fusion Attention (MDFA)
+- CNN-LSTM-Attention (2024 SOTA)
 """
 
 from typing import Tuple, Dict, Any, Optional
@@ -17,6 +18,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from src.models.mdfa import MDFAModule
+from src.models.cnn_lstm_attention import build_cnn_lstm_attention_model
 
 
 class ModelRegistry:
@@ -846,6 +848,70 @@ class MDFAModel(BaseModel):
         return BaseModel.compile_model(model, learning_rate)
 
 
+@ModelRegistry.register("cnn_lstm_attention")
+class CNNLSTMAttentionModel(BaseModel):
+    """
+    CNN-LSTM-Attention model for RUL prediction.
+
+    State-of-the-art architecture from:
+    "Prediction of Remaining Useful Life of Aero-engines Based on CNN-LSTM-Attention" (2024)
+    https://link.springer.com/article/10.1007/s44196-024-00639-w
+
+    Achieves RMSE 13.907-16.637 on CMAPSS datasets (FD001-FD004).
+
+    Architecture:
+        1. CNN layers (64→128→256 filters) for local feature extraction
+        2. Stacked LSTM (2 layers) for temporal modeling
+        3. Self-attention mechanism to focus on critical timesteps
+        4. Dense layers for RUL prediction
+
+    Key advantages:
+        - Simpler than MDFA → faster training
+        - Proven results on CMAPSS benchmark
+        - Effective for capturing both local patterns (CNN) and temporal dependencies (LSTM)
+        - Attention highlights when degradation accelerates
+    """
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 128,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        cnn_filters: list = None,
+    ) -> keras.Model:
+        """
+        Build CNN-LSTM-Attention model.
+
+        Args:
+            input_shape: (timesteps, features)
+            units: Number of LSTM units (default: 128)
+            dense_units: Units for final dense layer
+            dropout_rate: Dropout rate
+            learning_rate: Learning rate for optimizer
+            cnn_filters: CNN filter counts (default: [64, 128, 256])
+
+        Returns:
+            Compiled Keras model
+        """
+        if cnn_filters is None:
+            cnn_filters = [64, 128, 256]
+
+        # Use the specialized builder function
+        model = build_cnn_lstm_attention_model(
+            input_shape=input_shape,
+            cnn_filters=cnn_filters,
+            lstm_units=units,
+            attention_units=units // 2,  # Attention units = half of LSTM units
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            learning_rate=learning_rate,
+        )
+
+        return model
+
+
 def get_model(
     model_name: str,
     input_shape: Tuple[int, int],
@@ -890,6 +956,7 @@ def get_model_info() -> Dict[str, str]:
         # Attention-based models
         "transformer": "Transformer encoder - self-attention based, very SOTA",
         "mdfa": "MDFA - Multi-scale dilated fusion attention (paper SOTA, RMSE_norm 0.021-0.032)",
+        "cnn_lstm_attention": "CNN-LSTM-Attention - 2024 SOTA (CMAPSS RMSE 13.907-16.637)",
         # Baseline
         "mlp": "Simple MLP - baseline for comparison (no temporal modeling)",
     }
@@ -899,10 +966,10 @@ def get_model_recommendations() -> Dict[str, list]:
     """Get model recommendations for different use cases."""
     return {
         "quick_baseline": ["mlp", "gru"],
-        "best_accuracy": ["mdfa", "transformer", "attention_lstm", "wavenet"],
+        "best_accuracy": ["cnn_lstm_attention", "mdfa", "transformer", "attention_lstm"],
         "fastest_training": ["gru", "cnn_gru", "tcn"],
         "most_interpretable": ["lstm", "attention_lstm"],
         "long_sequences": ["mdfa", "tcn", "wavenet", "transformer"],
         "limited_data": ["gru", "lstm"],
-        "complex_patterns": ["mdfa", "transformer", "inception_lstm", "wavenet"],
+        "complex_patterns": ["cnn_lstm_attention", "mdfa", "transformer", "wavenet"],
     }
