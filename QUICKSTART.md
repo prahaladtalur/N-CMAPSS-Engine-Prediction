@@ -104,25 +104,54 @@ WANDB_MODE=offline python train_model.py \
 
 ---
 
-## 5. Production Deployment (Optional)
+## 5. Ensemble Predictions (Best Accuracy - Optional)
+
+For maximum accuracy, use ensemble of top 3 models:
+
+```bash
+# Step 1: Prepare ensemble models (one-time setup, ~9 minutes)
+python scripts/prepare_ensemble.py
+
+# Step 2: Run ensemble predictions
+python predict.py --ensemble --fd 1
+
+# Expected improvement: 10-15% better than single model (RMSE ~6.5)
+```
+
+**Why ensemble?** Combines MSTCN + Transformer + WaveNet predictions with intelligent weighting for maximum accuracy.
+
+See [ENSEMBLE_GUIDE.md](ENSEMBLE_GUIDE.md) for complete guide.
+
+## 6. Production Deployment (Optional)
 
 Once you have a trained model, deploy it:
 
-```python
-# Save your model
-from keras.models import load_model
+```bash
+# Single model prediction
+python predict.py --model-path models/production/mstcn_model.keras --fd 1
 
-# Load from W&B run directory
-model = load_model('wandb/offline-run-*/files/model.h5')
-
-# Make predictions
-import numpy as np
-test_sequence = np.random.randn(1, 1000, 32)  # Your sensor data
-rul_prediction = model.predict(test_sequence)
-print(f"Predicted RUL: {rul_prediction[0][0]:.2f} cycles")
+# Or use Python API
 ```
 
-See [README_PRODUCTION.md](README_PRODUCTION.md) for full deployment guide.
+```python
+from predict import RULPredictor
+import numpy as np
+
+# Single model
+predictor = RULPredictor(model_path="models/production/mstcn_model.keras")
+
+# Or ensemble (best accuracy)
+predictor = RULPredictor(ensemble=True)
+
+# Make prediction
+test_sequence = np.random.randn(1000, 32)  # Your sensor data
+result = predictor.predict_single(test_sequence)
+
+print(f"Predicted RUL: {result['prediction']:.2f} cycles")
+print(f"Confidence: {result['confidence']}")
+```
+
+See [ENSEMBLE_GUIDE.md](ENSEMBLE_GUIDE.md) for full deployment guide.
 
 ---
 

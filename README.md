@@ -4,6 +4,8 @@ Predict remaining useful life (RUL) for NASA's turbofan engines with a single, o
 
 🏆 **Best Model**: **MSTCN** (Multi-Scale Temporal Convolutional Network) achieves **RMSE 6.80, R² 0.90** - the best among 20 evaluated architectures. [Read the full analysis →](FINAL_ANALYSIS_REPORT.md) | [Understand MSTCN →](MSTCN_EXPLAINED.md)
 
+🔮 **NEW: Ensemble Predictions** - Combine MSTCN + Transformer + WaveNet for 10-15% better accuracy (expected RMSE ~6.5). [Ensemble Guide →](ENSEMBLE_GUIDE.md)
+
 ## Workflow at a Glance
 
 ```bash
@@ -50,6 +52,8 @@ N-CMAPSS-Engine-Prediction
 | `python train_model.py --list-models` | View every registered architecture with short descriptions |
 | `python train_model.py --model <name> [--epochs 50 --units 128 ...]` | Train one model with custom hyperparameters |
 | `python train_model.py --compare --models lstm gru tcn` | Fit multiple architectures back-to-back and write comparison plots under `results/comparison/` |
+| `python scripts/prepare_ensemble.py` | **NEW:** Prepare ensemble models (MSTCN + Transformer + WaveNet) |
+| `python predict.py --ensemble --fd 1` | **NEW:** Run ensemble predictions for maximum accuracy |
 | `python scripts/compare_saved_runs.py` | Build a comparison plot from saved runs (no retraining) |
 | `python scripts/make_best_model_summary.py` | Create a single summary image for the best model |
 
