@@ -2,7 +2,15 @@
 
 ## Project Overview
 
-ML project for predicting Remaining Useful Life (RUL) of NASA turbofan engines using the N-CMAPSS dataset. Unified pipeline with 15 neural network architectures, automatic data loading, and W&B experiment tracking. Best model: CNN-GRU + asymmetric loss (RMSE 6.44, R² 0.91, Acc@20 99.1%). See [EXPERIMENTS.md](EXPERIMENTS.md) for full results.
+ML project for predicting Remaining Useful Life (RUL) of NASA turbofan engines using the N-CMAPSS dataset. Unified pipeline with 20 neural network architectures, automatic data loading, and W&B experiment tracking.
+
+**Best model**: **MSTCN** (Multi-Scale TCN + Global Fusion Attention)
+- RMSE: **6.80 cycles**
+- R²: **0.90**
+- Accuracy@20: **99.12%**
+- **58% better** than previous best
+
+See [FINAL_ANALYSIS_REPORT.md](FINAL_ANALYSIS_REPORT.md) for complete 20-model benchmark.
 
 ## Quick Commands
 
@@ -114,19 +122,84 @@ Always run `make check` before committing.
 5. **Wait for CI to pass** before merging
 6. **Merge** the PR into main
 
+## Best Practices (From 20-Model Benchmark)
+
+### 🎯 Model Selection
+
+**For Production**:
+- **Use MSTCN** (best overall: RMSE 6.80, R² 0.90)
+- **Alternative**: Transformer (RMSE 6.82, fewer params)
+- **Avoid**: Traditional RNNs (LSTM/GRU) — all had negative R² scores
+
+**For Speed**:
+- Use WaveNet (RMSE 6.84, highly parallelizable)
+- **Avoid**: Long sequence + RNN combinations (very slow)
+
+### ⚙️ Hyperparameters That Matter
+
+**Critical (Large Impact)**:
+1. **Sequence length**: `--max-seq-length 1000` is **optimal**
+   - 1,000 steps: RMSE ~7.0, R² ~0.90
+   - 20,294 steps: RMSE ~22.0, R² <0 (negative!)
+   - **58% improvement** from using shorter sequences
+
+2. **Model architecture**: MSTCN > Transformer > WaveNet >> RNNs
+
+**Moderate Impact**:
+3. **Epochs**: 30 with early stopping is sufficient
+   - 100 epochs only 6% better, 3x slower
+4. **Batch size**: 64 works well
+5. **Dropout**: 0.2 prevents overfitting
+
+**Low Impact**:
+6. **Units**: 64 vs 128 similar performance
+7. **Learning rate**: 0.001 is fine for Adam
+
+### 📊 Training Best Practices
+
+```bash
+# ✅ RECOMMENDED: Fast, excellent performance
+python train_model.py --model mstcn --epochs 30 --batch-size 64 --max-seq-length 1000
+
+# ❌ AVOID: Very slow, poor performance
+python train_model.py --model lstm --epochs 100  # No max-seq-length = uses full 20K
+
+# ✅ For comparing models
+python train_model.py --compare --models mstcn transformer wavenet --max-seq-length 1000
+```
+
+### 🔬 What We Learned
+
+1. **Shorter sequences win**: Counterintuitively, 1K >> 20K timesteps
+   - Hypothesis: Recent patterns more predictive, long sequences add noise
+
+2. **Attention mechanisms matter**: Top 6 models all use attention
+   - Channel attention: Focuses on critical sensors
+   - Temporal attention: Highlights degradation windows
+
+3. **Multi-scale processing**: MSTCN's multiple dilation rates capture patterns at different time scales
+
+4. **RNNs obsolete for this task**: Sequential processing too slow, vanishing gradients
+
+5. **Early stopping essential**: Models plateau around epoch 25-35
+
+6. **Training is fast**: 3 minutes per model with optimal settings
+
 ## Related Documentation
 
-- [README.md](README.md) — Quick start guide
+- [README.md](README.md) — Quick start guide + benchmark results
+- [MSTCN_EXPLAINED.md](MSTCN_EXPLAINED.md) — Deep dive into winning architecture
+- [FINAL_ANALYSIS_REPORT.md](FINAL_ANALYSIS_REPORT.md) — Complete 20-model benchmark
+- [FINAL_RESULTS_COMPARISON.md](FINAL_RESULTS_COMPARISON.md) — 30 vs 100 epoch analysis
 - [README_PRODUCTION.md](README_PRODUCTION.md) — 3-step production deployment
 - [DEPLOYMENT.md](DEPLOYMENT.md) — Full deployment guide, Python API, troubleshooting
-- [EXPERIMENTS.md](EXPERIMENTS.md) — SOTA architecture comparison (CNN-GRU winner)
 
 ## Common Pitfalls
 
 - `train_model.py` is ~1000 lines — training logic lives here, NOT in `src/models/`
 - `src/models/__init__.py` uses lazy imports to avoid circular deps during CLI startup
 - Data downloads ~1GB on first use; cached in `data/raw/`
-- Full sequences are ~20k timesteps; truncate to 1000 (`max_sequence_length`) to avoid OOM
-- CNN-LSTM architecture does **not** converge; CNN-GRU is the stable hybrid variant
+- **CRITICAL**: Use `--max-seq-length 1000` for best performance (58% better than full sequences!)
+- Traditional RNNs (LSTM/GRU) do **not** work well on this dataset (negative R² scores)
 - W&B requires `WANDB_API_KEY` env var, or set `WANDB_MODE=offline` for local runs
-- Larger models overfit on this dataset — 64 units outperforms 128 units (see [EXPERIMENTS.md](EXPERIMENTS.md))
+- Models overfit after epoch 30-40 — use early stopping
