@@ -29,6 +29,8 @@ import argparse
 import json
 import os
 import sys
+import pickle
+from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 
@@ -137,6 +139,189 @@ def normalize_data(
     return X_train_norm, X_val_norm, X_test_norm, scaler
 
 
+def save_model_checkpoint(
+    model: keras.Model,
+    scaler: Optional[StandardScaler],
+    config: Dict[str, Any],
+    test_metrics: Dict[str, float],
+    model_name: str,
+    run_name: str,
+    y_min: float,
+    y_max: float,
+    save_dir: str = "models",
+) -> str:
+    """
+    Save trained model with all necessary artifacts for inference.
+
+    Args:
+        model: Trained Keras model
+        scaler: Fitted StandardScaler (or None if no normalization)
+        config: Training configuration dictionary
+        test_metrics: Test set evaluation metrics
+        model_name: Name of model architecture
+        run_name: Name of training run
+        y_min: Minimum RUL value (for normalization)
+        y_max: Maximum RUL value (for normalization)
+        save_dir: Base directory for saving models
+
+    Returns:
+        Path to saved model directory
+    """
+    # Create timestamped directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_dir = Path(save_dir) / f"{model_name}_{timestamp}"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{'='*60}")
+    print(f"Saving model checkpoint to: {model_dir}")
+    print(f"{'='*60}")
+
+    # 1. Save model in Keras format
+    model_path = model_dir / "model.keras"
+    model.save(model_path)
+    print(f"✓ Model saved: {model_path.name}")
+
+    # 2. Save scaler (if used)
+    if scaler is not None:
+        scaler_path = model_dir / "scaler.pkl"
+        with open(scaler_path, "wb") as f:
+            pickle.dump(scaler, f)
+        print(f"✓ Scaler saved: {scaler_path.name}")
+
+    # 3. Save RUL normalization parameters
+    rul_scaler_path = model_dir / "rul_scaler.json"
+    with open(rul_scaler_path, "w") as f:
+        json.dump({"y_min": float(y_min), "y_max": float(y_max)}, f, indent=2)
+    print(f"✓ RUL scaler saved: {rul_scaler_path.name}")
+
+    # 4. Save training configuration
+    config_path = model_dir / "config.json"
+    # Make config JSON-serializable
+    safe_config = {k: (int(v) if isinstance(v, np.integer) else v) for k, v in config.items()}
+    with open(config_path, "w") as f:
+        json.dump(safe_config, f, indent=2)
+    print(f"✓ Config saved: {config_path.name}")
+
+    # 5. Save test metrics
+    metrics_path = model_dir / "metrics.json"
+    # Make metrics JSON-serializable
+    safe_metrics = {
+        k: (float(v) if isinstance(v, (np.floating, np.integer)) else v)
+        for k, v in test_metrics.items()
+    }
+    with open(metrics_path, "w") as f:
+        json.dump(safe_metrics, f, indent=2)
+    print(f"✓ Metrics saved: {metrics_path.name}")
+
+    # 6. Save model metadata
+    metadata = {
+        "model_name": model_name,
+        "run_name": run_name,
+        "timestamp": timestamp,
+        "datetime": datetime.now().isoformat(),
+        "architecture": {
+            "num_parameters": int(model.count_params()),
+            "num_layers": len(model.layers),
+            "input_shape": [int(x) for x in model.input_shape[1:]],
+        },
+        "performance": {
+            "rmse": safe_metrics.get("rmse"),
+            "mae": safe_metrics.get("mae"),
+            "r2": safe_metrics.get("r2"),
+            "rmse_normalized": safe_metrics.get("rmse_normalized"),
+            "accuracy_at_20": safe_metrics.get("accuracy_20"),
+        },
+        "training": {
+            "epochs": config.get("epochs"),
+            "batch_size": config.get("batch_size"),
+            "learning_rate": config.get("learning_rate"),
+            "max_sequence_length": config.get("max_sequence_length"),
+        },
+        "files": {
+            "model": "model.keras",
+            "scaler": "scaler.pkl" if scaler is not None else None,
+            "config": "config.json",
+            "metrics": "metrics.json",
+            "rul_scaler": "rul_scaler.json",
+        },
+        "usage": {
+            "load_model": f'model = keras.models.load_model("{model_path}")',
+            "load_scaler": f'scaler = pickle.load(open("{model_dir}/scaler.pkl", "rb"))' if scaler else None,
+            "predict": "from predict import RULPredictor; predictor = RULPredictor(model_path='...')",
+        },
+    }
+
+    metadata_path = model_dir / "metadata.json"
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+    print(f"✓ Metadata saved: {metadata_path.name}")
+
+    # 7. Create README for the model
+    readme_content = f"""# {model_name.upper()} Model Checkpoint
+
+**Saved**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+**Run Name**: {run_name}
+
+## Performance
+
+| Metric | Value |
+|--------|-------|
+| RMSE | {safe_metrics.get('rmse', 'N/A'):.2f} cycles |
+| MAE | {safe_metrics.get('mae', 'N/A'):.2f} cycles |
+| R² Score | {safe_metrics.get('r2', 'N/A'):.4f} |
+| Accuracy@20 | {safe_metrics.get('accuracy_20', 'N/A'):.2f}% |
+
+## Usage
+
+### Python API
+
+```python
+from predict import RULPredictor
+import numpy as np
+
+# Load predictor
+predictor = RULPredictor(model_path='{model_path}')
+
+# Make prediction
+sensor_data = np.load('your_data.npy')  # Shape: (timesteps, 32)
+result = predictor.predict_single(sensor_data)
+
+print(f"Predicted RUL: {{result['prediction']:.2f}} cycles")
+```
+
+### Command Line
+
+```bash
+python predict.py --model-path {model_path} --input-file your_data.npy
+```
+
+## Files
+
+- `model.keras` - Trained Keras model
+- `scaler.pkl` - Feature normalization scaler
+- `config.json` - Training configuration
+- `metrics.json` - Test set evaluation metrics
+- `rul_scaler.json` - RUL normalization parameters
+- `metadata.json` - Complete model metadata
+
+## Configuration
+
+{json.dumps(safe_config, indent=2)}
+"""
+
+    readme_path = model_dir / "README.md"
+    with open(readme_path, "w") as f:
+        f.write(readme_content)
+    print(f"✓ README saved: {readme_path.name}")
+
+    print(f"{'='*60}")
+    print(f"✅ Model checkpoint saved successfully!")
+    print(f"📂 Location: {model_dir}")
+    print(f"{'='*60}\n")
+
+    return str(model_dir)
+
+
 def train_model(
     dev_X: List[np.ndarray],
     dev_y: List[np.ndarray],
@@ -151,6 +336,7 @@ def train_model(
     normalize: bool = True,
     visualize: bool = True,
     use_early_stop: bool = True,
+    save_checkpoint: bool = True,
 ) -> Tuple[keras.Model, Dict[str, Any], Dict[str, float]]:
     """
     Train a model with wandb logging and comprehensive evaluation.
@@ -489,6 +675,25 @@ def train_model(
 
     wandb.summary.update(summary_data)
 
+    # Save model checkpoint with all artifacts
+    if save_checkpoint and test_metrics:  # Only save if enabled and we have test results
+        checkpoint_dir = save_model_checkpoint(
+            model=model,
+            scaler=scaler,
+            config=config,
+            test_metrics=test_metrics,
+            model_name=model_name,
+            run_name=run_name,
+            y_min=y_min,
+            y_max=y_max,
+        )
+
+        # Log checkpoint location to wandb
+        wandb.log({"checkpoint/saved_path": checkpoint_dir})
+        wandb.summary.update({"checkpoint/directory": checkpoint_dir})
+    elif not save_checkpoint:
+        print("\n⚠️  Model checkpoint saving disabled (--no-save flag)")
+
     wandb.finish()
 
     return model, history.history, test_metrics
@@ -504,6 +709,7 @@ def compare_models(
     test_y: Optional[List[np.ndarray]] = None,
     config: Optional[Dict[str, Any]] = None,
     project_name: str = "n-cmapss-rul-comparison",
+    save_checkpoint: bool = True,
 ) -> Dict[str, Dict[str, Any]]:
     """
     Compare multiple models on the same dataset.
@@ -553,6 +759,7 @@ def compare_models(
                 run_name=f"{model_name}-comparison",
                 visualize=False,  # Skip individual visualizations
                 use_early_stop=use_early_stop,
+                save_checkpoint=save_checkpoint,
             )
 
             results[model_name] = {
@@ -914,6 +1121,11 @@ Examples:
         help="Disable early stopping to run all epochs",
     )
     parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Disable automatic model checkpoint saving",
+    )
+    parser.add_argument(
         "--list-models",
         action="store_true",
         help="List all available models and exit",
@@ -1039,6 +1251,7 @@ Examples:
             test_y=test_y,
             config=config,
             project_name=f"{args.project}-comparison",
+            save_checkpoint=not args.no_save,
         )
 
         print("\n" + "=" * 80)
@@ -1069,6 +1282,7 @@ Examples:
             normalize=not args.no_normalize,
             visualize=not args.no_visualize,
             use_early_stop=config.get("use_early_stop", True),
+            save_checkpoint=not args.no_save,
         )
 
         print("\n" + "=" * 80)
