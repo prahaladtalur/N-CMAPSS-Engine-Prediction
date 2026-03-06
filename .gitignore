@@ -23,8 +23,8 @@ build/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Models
-models/
+# Saved model weights (not src/models/ source code)
+/models/
 *.pth
 *.pt
 *.pkl
