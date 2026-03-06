@@ -23,11 +23,19 @@ Usage examples:
 
     # Get model recommendations
     python train_model.py --recommend
+
+    # Train with a fixed seed (reproducible)
+    python train_model.py --model mstcn --seed 42
+
+    # Multi-seed experiment (reports mean ± std)
+    python train_model.py --model mstcn --seed 42 --num-seeds 5
 """
 
 import argparse
 import json
 import os
+import random
+import subprocess
 import sys
 import pickle
 from datetime import datetime
@@ -61,6 +69,35 @@ from src.models.architectures import (
 )
 from src.utils.metrics import compute_all_metrics, format_metrics
 from src.search import run_hparam_search
+
+# ============================================================================
+# Reproducibility Utilities
+# ============================================================================
+
+
+def set_seeds(seed: int = 42) -> None:
+    """Set all random seeds for full experiment reproducibility.
+
+    NOTE: PYTHONHASHSEED must be set before Python starts to fully take effect.
+    Set it in your shell: ``export PYTHONHASHSEED=42`` before running training.
+    """
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+
+
+def get_git_hash() -> str:
+    """Return the current git commit hash for experiment traceability."""
+    try:
+        return (
+            subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
+            .decode()
+            .strip()
+        )
+    except Exception:
+        return "unknown"
+
 
 # ============================================================================
 # Training Functions (moved from src/models/train.py)
@@ -246,7 +283,9 @@ def save_model_checkpoint(
         },
         "usage": {
             "load_model": f'model = keras.models.load_model("{model_path}")',
-            "load_scaler": f'scaler = pickle.load(open("{model_dir}/scaler.pkl", "rb"))' if scaler else None,
+            "load_scaler": (
+                f'scaler = pickle.load(open("{model_dir}/scaler.pkl", "rb"))' if scaler else None
+            ),
             "predict": "from predict import RULPredictor; predictor = RULPredictor(model_path='...')",
         },
     }
@@ -337,6 +376,7 @@ def train_model(
     visualize: bool = True,
     use_early_stop: bool = True,
     save_checkpoint: bool = True,
+    seed: int = 42,
 ) -> Tuple[keras.Model, Dict[str, Any], Dict[str, float]]:
     """
     Train a model with wandb logging and comprehensive evaluation.
@@ -378,6 +418,15 @@ def train_model(
     else:
         config = {**default_config, **config}
 
+    # Inject seed into config so it gets saved with all artifacts
+    config["seed"] = seed
+
+    # Set random seeds for reproducibility
+    set_seeds(seed)
+
+    # Capture git hash for traceability
+    git_hash = get_git_hash()
+
     # Set run name
     if run_name is None:
         run_name = f"{model_name}-run"
@@ -386,7 +435,7 @@ def train_model(
     wandb.init(
         project=project_name,
         name=run_name,
-        config={**config, "model_name": model_name},
+        config={**config, "model_name": model_name, "git_hash": git_hash},
         reinit=True,
     )
 
@@ -638,6 +687,9 @@ def train_model(
         "training/final_train_mae": float(history.history["mae"][-1]),
         "training/batch_size": int(config["batch_size"]),
         "training/learning_rate": float(config["learning_rate"]),
+        # Reproducibility
+        "reproducibility/seed": seed,
+        "reproducibility/git_hash": git_hash,
     }
 
     # Add validation metrics if available
@@ -710,6 +762,7 @@ def compare_models(
     config: Optional[Dict[str, Any]] = None,
     project_name: str = "n-cmapss-rul-comparison",
     save_checkpoint: bool = True,
+    seed: int = 42,
 ) -> Dict[str, Dict[str, Any]]:
     """
     Compare multiple models on the same dataset.
@@ -760,6 +813,7 @@ def compare_models(
                 visualize=False,  # Skip individual visualizations
                 use_early_stop=use_early_stop,
                 save_checkpoint=save_checkpoint,
+                seed=seed,
             )
 
             results[model_name] = {
@@ -1160,6 +1214,23 @@ Examples:
         help="Optional file containing an integer worker count that can be edited live",
     )
 
+    # Reproducibility options
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+    parser.add_argument(
+        "--num-seeds",
+        type=int,
+        default=None,
+        help=(
+            "Run N experiments with consecutive seeds [seed, seed+1, ..., seed+N-1] "
+            "and report mean ± std (e.g. --seed 42 --num-seeds 5)"
+        ),
+    )
+
     args = parser.parse_args()
 
     # Handle info commands
@@ -1252,6 +1323,7 @@ Examples:
             config=config,
             project_name=f"{args.project}-comparison",
             save_checkpoint=not args.no_save,
+            seed=args.seed,
         )
 
         print("\n" + "=" * 80)
@@ -1263,38 +1335,91 @@ Examples:
     # Single model mode
     else:
         model_name = args.model
-
-        print(f"\n{'='*80}")
-        print(f"Training: {model_name}")
-        print("=" * 80)
-
-        model, history, metrics = train_model(
-            dev_X=dev_X,
-            dev_y=dev_y,
-            model_name=model_name,
-            val_X=val_X,
-            val_y=val_y,
-            test_X=test_X,
-            test_y=test_y,
-            config=config,
-            project_name=args.project,
-            run_name=args.run_name,
-            normalize=not args.no_normalize,
-            visualize=not args.no_visualize,
-            use_early_stop=config.get("use_early_stop", True),
-            save_checkpoint=not args.no_save,
+        seeds = (
+            list(range(args.seed, args.seed + args.num_seeds))
+            if args.num_seeds and args.num_seeds > 1
+            else [args.seed]
         )
+
+        if len(seeds) > 1:
+            print(f"\nMulti-seed experiment: {len(seeds)} seeds {seeds}")
+
+        all_metrics: List[Dict[str, float]] = []
+
+        for seed in seeds:
+            seed_suffix = f"-seed{seed}" if len(seeds) > 1 else ""
+            base_run_name = args.run_name or f"{model_name}-run"
+            run_name = f"{base_run_name}{seed_suffix}"
+
+            print(f"\n{'='*80}")
+            print(f"Training: {model_name}  (seed={seed})")
+            print("=" * 80)
+
+            model, history, metrics = train_model(
+                dev_X=dev_X,
+                dev_y=dev_y,
+                model_name=model_name,
+                val_X=val_X,
+                val_y=val_y,
+                test_X=test_X,
+                test_y=test_y,
+                config=config,
+                project_name=args.project,
+                run_name=run_name,
+                normalize=not args.no_normalize,
+                visualize=not args.no_visualize and len(seeds) == 1,
+                use_early_stop=config.get("use_early_stop", True),
+                save_checkpoint=not args.no_save,
+                seed=seed,
+            )
+
+            if metrics:
+                all_metrics.append(metrics)
 
         print("\n" + "=" * 80)
         print(f"TRAINING COMPLETE: {model_name}")
         print("=" * 80)
 
-        if metrics:
-            print("\nTest Set Metrics:")
-            print(format_metrics(metrics))
+        if all_metrics:
+            if len(all_metrics) == 1:
+                print("\nTest Set Metrics:")
+                print(format_metrics(all_metrics[0]))
+            else:
+                # Multi-seed: report mean ± std
+                print(f"\nMulti-Seed Results ({len(all_metrics)} seeds):")
+                print("-" * 60)
+                metric_keys = [
+                    k for k in all_metrics[0].keys() if isinstance(all_metrics[0][k], float)
+                ]
+                for key in metric_keys:
+                    values = [m[key] for m in all_metrics if key in m]
+                    mean_val = float(np.mean(values))
+                    std_val = float(np.std(values))
+                    print(f"  {key:30s}: {mean_val:.4f} ± {std_val:.4f}")
+                print("-" * 60)
 
-        run_name = args.run_name or f"{model_name}-run"
-        print(f"\nResults saved to: results/{run_name}/")
+                # Save multi-seed summary as JSON
+                summary = {
+                    "model": model_name,
+                    "seeds": seeds,
+                    "num_seeds": len(seeds),
+                    "metrics_mean": {
+                        k: float(np.mean([m[k] for m in all_metrics if k in m]))
+                        for k in metric_keys
+                    },
+                    "metrics_std": {
+                        k: float(np.std([m[k] for m in all_metrics if k in m])) for k in metric_keys
+                    },
+                    "per_seed": {str(seeds[i]): all_metrics[i] for i in range(len(all_metrics))},
+                }
+                summary_path = f"results/{model_name}_multiseed_summary.json"
+                os.makedirs("results", exist_ok=True)
+                with open(summary_path, "w") as f:
+                    json.dump(summary, f, indent=2)
+                print(f"\nMulti-seed summary saved to: {summary_path}")
+
+        base_run_name = args.run_name or f"{model_name}-run"
+        print(f"\nResults saved to: results/{base_run_name}/")
         print(f"Check wandb project: {args.project}")
 
 
