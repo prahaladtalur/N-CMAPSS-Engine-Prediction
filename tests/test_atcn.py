@@ -193,7 +193,7 @@ class TestAsymmetricMSE:
         """Test late predictions (y_pred > y_true) are penalized more."""
         y_true = tf.constant([[50.0]])
         y_pred_early = tf.constant([[40.0]])  # 10 units early
-        y_pred_late = tf.constant([[60.0]])   # 10 units late
+        y_pred_late = tf.constant([[60.0]])  # 10 units late
 
         loss_fn = asymmetric_mse(alpha=2.0)
         loss_early = float(loss_fn(y_true, y_pred_early))
