@@ -22,10 +22,10 @@ install-dev:
 
 # Code quality
 lint:
-	black --check src/ train_model.py scripts/
+	black --check src/ tests/ train_model.py scripts/
 
 format:
-	black src/ train_model.py scripts/
+	black src/ tests/ train_model.py scripts/
 
 typecheck:
 	mypy src/ train_model.py
