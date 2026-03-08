@@ -30,3 +30,6 @@ jobs:
 
       - name: Type check with mypy
         run: uv run mypy src/ train_model.py
+
+      - name: Run tests with pytest
+        run: uv run pytest tests/ -v --tb=short
