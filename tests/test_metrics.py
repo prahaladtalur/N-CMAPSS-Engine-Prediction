@@ -89,7 +89,7 @@ class TestPHMScore:
         """Test that late predictions are penalized more than early ones."""
         y_true = np.array([50.0])
         y_pred_early = np.array([40.0])  # 10 cycles early
-        y_pred_late = np.array([60.0])   # 10 cycles late
+        y_pred_late = np.array([60.0])  # 10 cycles late
 
         score_early = phm_score(y_true, y_pred_early)
         score_late = phm_score(y_true, y_pred_late)
@@ -118,7 +118,7 @@ class TestAsymmetricLoss:
         """Test asymmetric loss penalizes late predictions more."""
         y_true = np.array([50.0])
         y_pred_early = np.array([40.0])  # 10 cycles early (error = -10)
-        y_pred_late = np.array([60.0])   # 10 cycles late (error = 10)
+        y_pred_late = np.array([60.0])  # 10 cycles late (error = 10)
 
         loss_early = asymmetric_loss(y_true, y_pred_early, alpha=2.0)
         loss_late = asymmetric_loss(y_true, y_pred_late, alpha=2.0)
@@ -236,7 +236,7 @@ class TestNormalizedMetrics:
         y_pred_1 = np.array([10.0, 90.0])  # 10% errors
 
         y_true_2 = np.array([0.0, 10.0])
-        y_pred_2 = np.array([1.0, 9.0])    # 10% errors
+        y_pred_2 = np.array([1.0, 9.0])  # 10% errors
 
         rmse_1 = normalized_rmse(y_true_1, y_pred_1, y_min=0.0, y_max=100.0)
         rmse_2 = normalized_rmse(y_true_2, y_pred_2, y_min=0.0, y_max=10.0)
@@ -255,10 +255,17 @@ class TestComputeAllMetrics:
         metrics = compute_all_metrics(y_true, y_pred)
 
         required_keys = [
-            "mse", "rmse", "mae", "mape", "r2",
-            "phm_score", "phm_score_normalized",
+            "mse",
+            "rmse",
+            "mae",
+            "mape",
+            "r2",
+            "phm_score",
+            "phm_score_normalized",
             "asymmetric_loss",
-            "accuracy_10", "accuracy_15", "accuracy_20",
+            "accuracy_10",
+            "accuracy_15",
+            "accuracy_20",
         ]
 
         for key in required_keys:

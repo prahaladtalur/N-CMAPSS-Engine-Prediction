@@ -249,7 +249,9 @@ class TestMSTCNArchitecture:
     def test_mstcn_parameter_count_scales_with_scales(self):
         """Test adding more scales increases parameters."""
         model_few_scales = build_mstcn_model(input_shape=(100, 20), dilation_rates=[1, 2])
-        model_many_scales = build_mstcn_model(input_shape=(100, 20), dilation_rates=[1, 2, 4, 8, 16])
+        model_many_scales = build_mstcn_model(
+            input_shape=(100, 20), dilation_rates=[1, 2, 4, 8, 16]
+        )
 
         params_few = model_few_scales.count_params()
         params_many = model_many_scales.count_params()

@@ -1170,6 +1170,11 @@ Examples:
         help="Disable visualization generation",
     )
     parser.add_argument(
+        "--visualize-attention",
+        action="store_true",
+        help="Generate attention/saliency interpretability report after training",
+    )
+    parser.add_argument(
         "--no-early-stop",
         action="store_true",
         help="Disable early stopping to run all epochs",
@@ -1421,6 +1426,23 @@ Examples:
         base_run_name = args.run_name or f"{model_name}-run"
         print(f"\nResults saved to: results/{base_run_name}/")
         print(f"Check wandb project: {args.project}")
+
+        # Attention / interpretability report
+        if args.visualize_attention and test_X is not None and all_metrics:
+            from src.utils.interpretability import generate_interpretability_report
+
+            print("\nGenerating interpretability report...")
+            X_te, y_te = prepare_sequences(test_X, test_y, config.get("max_sequence_length"))
+            if not args.no_normalize:
+                X_tr, _ = prepare_sequences(dev_X, dev_y, config.get("max_sequence_length"))
+                _, _, X_te, _ = normalize_data(X_tr, None, X_te)
+            generate_interpretability_report(
+                model=model,
+                X_test=X_te,
+                y_test=y_te,
+                model_name=model_name,
+                save_dir=f"results/{run_name}/attention",
+            )
 
 
 if __name__ == "__main__":

@@ -241,9 +241,7 @@ class TestLRLSAttention:
 
     def test_lrls_get_config(self):
         """Test LRLS attention serialization config."""
-        layer = LRLSAttention(
-            num_heads=8, local_window=64, num_global_tokens=16, dropout_rate=0.15
-        )
+        layer = LRLSAttention(num_heads=8, local_window=64, num_global_tokens=16, dropout_rate=0.15)
         config = layer.get_config()
 
         assert config["num_heads"] == 8
