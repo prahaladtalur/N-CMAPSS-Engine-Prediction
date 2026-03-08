@@ -152,15 +152,15 @@ def create_cross_validation_summary(
     df = pd.DataFrame(results)
 
     # Summary statistics
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("CROSS-DATASET VALIDATION RESULTS")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     if "error" not in df.columns:
         print("Performance by Dataset:")
         print(df.to_string(index=False))
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("Summary Statistics:")
         print(f"  Mean RMSE: {df['rmse'].mean():.2f} ± {df['rmse'].std():.2f}")
         print(f"  Best FD:   FD{df.loc[df['rmse'].idxmin(), 'fd']} (RMSE: {df['rmse'].min():.2f})")
@@ -171,26 +171,26 @@ def create_cross_validation_summary(
         fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
         # RMSE by dataset
-        axes[0].bar(df['fd'], df['rmse'], color='steelblue', alpha=0.7)
-        axes[0].axhline(df['rmse'].mean(), color='red', linestyle='--', label='Mean')
-        axes[0].set_xlabel('Dataset (FD)')
-        axes[0].set_ylabel('RMSE (cycles)')
+        axes[0].bar(df["fd"], df["rmse"], color="steelblue", alpha=0.7)
+        axes[0].axhline(df["rmse"].mean(), color="red", linestyle="--", label="Mean")
+        axes[0].set_xlabel("Dataset (FD)")
+        axes[0].set_ylabel("RMSE (cycles)")
         axes[0].set_title(f'Model Performance Across Datasets\n({df["model"].iloc[0].upper()})')
         axes[0].legend()
         axes[0].grid(True, alpha=0.3)
 
         # R² by dataset
-        axes[1].bar(df['fd'], df['r2'], color='forestgreen', alpha=0.7)
-        axes[1].axhline(df['r2'].mean(), color='red', linestyle='--', label='Mean')
-        axes[1].set_xlabel('Dataset (FD)')
-        axes[1].set_ylabel('R² Score')
-        axes[1].set_title('Model Generalization (R²)')
+        axes[1].bar(df["fd"], df["r2"], color="forestgreen", alpha=0.7)
+        axes[1].axhline(df["r2"].mean(), color="red", linestyle="--", label="Mean")
+        axes[1].set_xlabel("Dataset (FD)")
+        axes[1].set_ylabel("R² Score")
+        axes[1].set_title("Model Generalization (R²)")
         axes[1].legend()
         axes[1].grid(True, alpha=0.3)
 
         plt.tight_layout()
         plot_path = Path(output_dir) / f"{df['model'].iloc[0]}_cross_validation.png"
-        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plt.savefig(plot_path, dpi=150, bbox_inches="tight")
         print(f"\n📊 Plot saved to: {plot_path}")
         plt.close()
 
@@ -220,16 +220,11 @@ Examples:
     )
 
     parser.add_argument(
-        "--model",
-        type=str,
-        default="mstcn",
-        help="Model to validate (default: mstcn)"
+        "--model", type=str, default="mstcn", help="Model to validate (default: mstcn)"
     )
 
     parser.add_argument(
-        "--ensemble",
-        action="store_true",
-        help="Use ensemble instead of single model"
+        "--ensemble", action="store_true", help="Use ensemble instead of single model"
     )
 
     parser.add_argument(
@@ -237,49 +232,36 @@ Examples:
         type=int,
         nargs="+",
         default=[1, 2, 3, 4, 5, 6, 7],
-        help="Datasets to validate on (default: all 1-7)"
+        help="Datasets to validate on (default: all 1-7)",
     )
 
     parser.add_argument(
         "--train-fd",
         type=int,
         default=None,
-        help="Train on specific FD, test on others (transfer learning)"
+        help="Train on specific FD, test on others (transfer learning)",
     )
 
     parser.add_argument(
-        "--test-fds",
-        type=int,
-        nargs="+",
-        default=None,
-        help="Test datasets (used with --train-fd)"
+        "--test-fds", type=int, nargs="+", default=None, help="Test datasets (used with --train-fd)"
     )
 
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=30,
-        help="Epochs for training (default: 30)"
-    )
+    parser.add_argument("--epochs", type=int, default=30, help="Epochs for training (default: 30)")
 
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force retrain even if models exist"
-    )
+    parser.add_argument("--force", action="store_true", help="Force retrain even if models exist")
 
     parser.add_argument(
         "--output-dir",
         type=str,
         default="results/cross_validation",
-        help="Output directory for results"
+        help="Output directory for results",
     )
 
     args = parser.parse_args()
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("CROSS-DATASET VALIDATION")
-    print("="*70)
+    print("=" * 70)
 
     # Setup
     if args.ensemble:

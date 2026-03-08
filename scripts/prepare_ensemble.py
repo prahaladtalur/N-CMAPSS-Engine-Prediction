@@ -141,17 +141,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    parser.add_argument(
-        "--force", action="store_true", help="Retrain even if models already exist"
-    )
+    parser.add_argument("--force", action="store_true", help="Retrain even if models already exist")
 
     parser.add_argument(
         "--quick", action="store_true", help="Quick training (10 epochs) for testing"
     )
 
-    parser.add_argument(
-        "--epochs", type=int, default=30, help="Number of epochs (default: 30)"
-    )
+    parser.add_argument("--epochs", type=int, default=30, help="Number of epochs (default: 30)")
 
     parser.add_argument("--fd", type=int, default=1, help="Dataset FD (default: 1)")
 
@@ -160,9 +156,9 @@ def main():
     epochs = 10 if args.quick else args.epochs
     production_dir = "models/production"
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("ENSEMBLE MODEL PREPARATION")
-    print("="*60)
+    print("=" * 60)
 
     models = get_ensemble_models()
 
@@ -213,7 +209,7 @@ def main():
     if args.force:
         print("\n⚠️  --force mode: Retraining ALL models")
         response = input("Continue? [y/N]: ")
-        if response.lower() != 'y':
+        if response.lower() != "y":
             print("Aborted.")
             return
 
