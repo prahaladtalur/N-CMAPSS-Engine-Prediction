@@ -1,5 +1,46 @@
 # Experiment Results: SOTA Architecture Comparison
 
+## Issue-25 Benchmark Recipe
+
+Use this when you want a reproducible sweep around the new issue-25 controls instead of ad hoc CLI runs.
+
+```bash
+# Local/offline benchmark recipe on FD1 for the top three candidates
+uv run python scripts/tune_for_sota.py \
+  --experiment issue25_recipe \
+  --models mstcn transformer wavenet \
+  --fd 1 \
+  --epochs 60 \
+  --project sota-tuning-issue25 \
+  --offline
+
+# Focused single-model follow-up once one recipe wins
+uv run python scripts/tune_for_sota.py \
+  --experiment hyperparams \
+  --model mstcn \
+  --fd 1 \
+  --epochs 75 \
+  --project sota-tuning-issue25 \
+  --offline
+```
+
+Recipe order:
+- `baseline`: current asymmetric-loss reference point
+- `clip125`: paper-style capped RUL labels
+- `clip125_minmax`: capped labels plus reversible min-max target scaling
+- `clip125_minmax_huber`: robustness check for heavy-tail target errors
+- `clip125_minmax_huber_clipnorm1`: same recipe with optimizer clipping for stability
+- All recipes use `max_sequence_length=1000` to avoid the known 20k-timestep memory path and stay comparable with the repo’s earlier strongest results
+
+Outputs:
+- JSON results in `tuning_results/`
+- Markdown leaderboard in `tuning_results/`
+- W&B runs in the project you pass via `--project`
+
+Decision rule:
+- Promote the best `rmse_normalized` recipe into a larger hyperparameter sweep.
+- Only treat gains as real after a multi-seed confirmation run with `train_model.py --num-seeds`.
+
 **Date**: 2026-01-29
 **Dataset**: N-CMAPSS FD1
 **Training**: 30 epochs, batch size 32

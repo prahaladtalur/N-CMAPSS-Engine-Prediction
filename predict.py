@@ -20,7 +20,7 @@ import json
 import pickle
 import argparse
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -49,7 +49,7 @@ class RULPredictor:
             model_paths: Custom list of model paths for ensemble
         """
         self.ensemble = ensemble
-        self.models = []
+        self.model_specs: List[Dict[str, Any]] = []
         self.model_names = []
         self.ensemble_weights = [0.5, 0.3, 0.2]  # Based on benchmark rankings
 
@@ -62,65 +62,48 @@ class RULPredictor:
             ]
             for path in default_ensemble:
                 if Path(path).exists():
-                    model = tf.keras.models.load_model(
-                        path, custom_objects={"loss": self._asymmetric_mse()}
-                    )
-                    self.models.append(model)
-                    self.model_names.append(Path(path).stem.replace("_model", ""))
+                    spec = self._load_model_spec(path)
+                    self.model_specs.append(spec)
+                    self.model_names.append(spec["name"])
                     print(f"✓ Loaded: {Path(path).name}")
                 else:
                     print(f"⚠️  Model not found: {path}")
 
-            if not self.models:
+            if not self.model_specs:
                 raise FileNotFoundError("No ensemble models found. Train models first.")
-
-            self.model_dir = str(Path(default_ensemble[0]).parent)
         else:
             if model_path is None:
                 raise ValueError("model_path required when ensemble=False")
-            self.model_dir = str(Path(model_path).parent)
-            self.models = [
-                tf.keras.models.load_model(
-                    model_path, custom_objects={"loss": self._asymmetric_mse()}
-                )
-            ]
-            self.model_names = [Path(model_path).stem.replace("_model", "")]
+            spec = self._load_model_spec(model_path)
+            self.model_specs = [spec]
+            self.model_names = [spec["name"]]
             print(f"✓ Model loaded from: {model_path}")
 
-        # Load config
-        if config_path is None:
-            config_path = os.path.join(self.model_dir, "config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                self.config = json.load(f)
+        # Config override only applies to single-model inference.
+        if config_path is not None and not ensemble:
+            self.model_specs[0]["config"] = self._load_json_or_default(
+                config_path, {"max_sequence_length": 1000}
+            )
+            self.model_specs[0]["max_seq_length"] = self.model_specs[0]["config"].get(
+                "max_sequence_length", 1000
+            )
             print(f"✓ Config loaded from: {config_path}")
-        else:
-            self.config = {"max_sequence_length": 1000}
 
-        self.max_seq_length = self.config.get("max_sequence_length", 1000)
+        self.config = self.model_specs[0]["config"]
+        self.max_seq_length = self.model_specs[0]["max_seq_length"]
+        self.scaler = self.model_specs[0]["scaler"]
 
-        # Load feature scaler
-        scaler_path = os.path.join(self.model_dir, "scaler.pkl")
-        if os.path.exists(scaler_path):
-            with open(scaler_path, "rb") as f:
-                self.scaler = pickle.load(f)
-            print(f"✓ Feature scaler loaded from: {scaler_path}")
-        else:
-            self.scaler = None
-            print("⚠️  No feature scaler found — predictions may be inaccurate")
-
-        # Load RUL scaler (for normalized metrics)
-        rul_scaler_path = os.path.join(self.model_dir, "rul_scaler.json")
-        if os.path.exists(rul_scaler_path):
-            with open(rul_scaler_path, "r") as f:
-                rul_scaler = json.load(f)
-                self.y_min = rul_scaler["y_min"]
-                self.y_max = rul_scaler["y_max"]
-            print(f"✓ RUL scaler loaded from: {rul_scaler_path}")
+        y_min_values = {spec["y_min"] for spec in self.model_specs}
+        y_max_values = {spec["y_max"] for spec in self.model_specs}
+        clip_values = {spec["target_transform"].get("clip_value") for spec in self.model_specs}
+        if len(y_min_values) == 1 and len(y_max_values) == 1:
+            self.y_min = next(iter(y_min_values))
+            self.y_max = next(iter(y_max_values))
         else:
             self.y_min = None
             self.y_max = None
-            print("⚠️  No RUL scaler found — normalized metrics unavailable")
+
+        self.eval_clip_value = next(iter(clip_values)) if len(clip_values) == 1 else None
 
     @staticmethod
     def _asymmetric_mse(alpha: float = 2.0):
@@ -132,7 +115,80 @@ class RULPredictor:
 
         return loss
 
-    def _prepare_single(self, sequence: np.ndarray) -> np.ndarray:
+    def _load_json_or_default(self, path: str, default: Dict[str, Any]) -> Dict[str, Any]:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return json.load(f)
+        return default
+
+    def _load_model_spec(self, model_path: str) -> Dict[str, Any]:
+        model_dir = str(Path(model_path).parent)
+        model = tf.keras.models.load_model(model_path, custom_objects={"loss": self._asymmetric_mse()})
+
+        config_path = os.path.join(model_dir, "config.json")
+        config = self._load_json_or_default(config_path, {"max_sequence_length": 1000})
+        if os.path.exists(config_path):
+            print(f"✓ Config loaded from: {config_path}")
+
+        scaler_path = os.path.join(model_dir, "scaler.pkl")
+        scaler = None
+        if os.path.exists(scaler_path):
+            with open(scaler_path, "rb") as f:
+                scaler = pickle.load(f)
+            print(f"✓ Feature scaler loaded from: {scaler_path}")
+
+        rul_scaler_path = os.path.join(model_dir, "rul_scaler.json")
+        target_transform = {
+            "clip_value": None,
+            "scaling": "none",
+            "scale_min": None,
+            "scale_max": None,
+        }
+        y_min = None
+        y_max = None
+        if os.path.exists(rul_scaler_path):
+            with open(rul_scaler_path, "r") as f:
+                rul_scaler = json.load(f)
+            y_min = rul_scaler.get("y_min")
+            y_max = rul_scaler.get("y_max")
+            target_transform.update(
+                {
+                    "clip_value": rul_scaler.get("clip_value"),
+                    "scaling": rul_scaler.get("target_scaling") or "none",
+                    "scale_min": rul_scaler.get("scale_min"),
+                    "scale_max": rul_scaler.get("scale_max"),
+                }
+            )
+            print(f"✓ RUL scaler loaded from: {rul_scaler_path}")
+
+        return {
+            "model": model,
+            "name": Path(model_path).stem.replace("_model", ""),
+            "config": config,
+            "max_seq_length": config.get("max_sequence_length", 1000),
+            "scaler": scaler,
+            "target_transform": target_transform,
+            "y_min": y_min,
+            "y_max": y_max,
+        }
+
+    @staticmethod
+    def _inverse_transform_prediction(value: float, target_transform: Dict[str, Any]) -> float:
+        if target_transform.get("scaling") != "minmax":
+            return value
+
+        scale_min = target_transform.get("scale_min")
+        scale_max = target_transform.get("scale_max")
+        if scale_min is None or scale_max is None:
+            return value
+        return value * (scale_max - scale_min) + scale_min
+
+    def _prepare_single(
+        self,
+        sequence: np.ndarray,
+        max_seq_length: int,
+        scaler: Optional[Any],
+    ) -> np.ndarray:
         """
         Prepare a single sequence for inference.
 
@@ -143,12 +199,12 @@ class RULPredictor:
             Batch-ready array (1, max_seq_length, features)
         """
         # Truncate to last max_seq_length timesteps
-        if len(sequence) > self.max_seq_length:
-            sequence = sequence[-self.max_seq_length :]
+        if len(sequence) > max_seq_length:
+            sequence = sequence[-max_seq_length:]
 
         # Normalize
-        if self.scaler is not None:
-            sequence = self.scaler.transform(sequence)
+        if scaler is not None:
+            sequence = scaler.transform(sequence)
 
         return sequence[np.newaxis, ...]  # add batch dim
 
@@ -162,15 +218,15 @@ class RULPredictor:
         Returns:
             Dictionary with prediction and confidence info
         """
-        X = self._prepare_single(sequence)
-
         predictions = []
         individual_preds = {}
 
-        for model, name in zip(self.models, self.model_names):
-            pred = float(model.predict(X, verbose=0)[0, 0])
+        for spec in self.model_specs:
+            X = self._prepare_single(sequence, spec["max_seq_length"], spec["scaler"])
+            pred = float(spec["model"].predict(X, verbose=0)[0, 0])
+            pred = self._inverse_transform_prediction(pred, spec["target_transform"])
             predictions.append(pred)
-            individual_preds[name] = pred
+            individual_preds[spec["name"]] = pred
 
         # Calculate ensemble prediction (weighted average)
         if self.ensemble and len(predictions) == len(self.ensemble_weights):
@@ -245,6 +301,9 @@ class RULPredictor:
 
         y_true = np.array(all_true)
         y_pred = np.array(all_pred)
+
+        if self.eval_clip_value is not None:
+            y_true = np.minimum(y_true, self.eval_clip_value)
 
         metrics = compute_all_metrics(y_true, y_pred, y_min=self.y_min, y_max=self.y_max)
         print("\n" + format_metrics(metrics))
