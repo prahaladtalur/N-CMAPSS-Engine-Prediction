@@ -23,12 +23,12 @@ python train_model.py --compare --models lstm gru transformer
 The CLI handles:
 - downloading & caching any FD00X split through `src/data/load_data.py`
 - preparing sequences, normalization, wandb logging, and result plots via `train_model.py`
-- switching among all registered architectures defined in `src/models/architectures.py`
+- switching among all registered architectures exposed through `src/models/` with a compatibility shim at `src/models/architectures.py`
 
 ## Feature Highlights
 
 - **Single source of truth for data** – `src/data/load_data.py` sets up RUL datasets and returns `(dev, val, test)` splits ready for modeling.
-- **Curated model zoo** – `src/models/architectures.py` registers LSTM/GRU variants, CNN hybrids, TCN/WaveNet blocks, and a Transformer encoder; use `train_model.py --list-models` to inspect names.
+- **Curated model zoo** – `src/models/` organizes LSTM/GRU variants, CNN hybrids, TCN/WaveNet blocks, and Transformer-style models by category; use `train_model.py --list-models` to inspect names.
 - **Consistent training loop** – `train_model.py` is the main CLI entry point, while `src/models` exposes `train_model(...)`, `compare_models(...)`, and `prepare_sequences(...)` through the package API.
 - **Evaluation utilities** – Metrics (`src/utils/metrics.py`) and visualization helpers (`src/utils/training_viz.py`, `src/utils/visualize.py`) cover both dataset analysis and post-training reporting.
 

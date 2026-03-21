@@ -24,7 +24,7 @@ build/
 *.ipynb_checkpoints
 
 # Models
-models/
+/models/
 *.pth
 *.pt
 *.pkl
