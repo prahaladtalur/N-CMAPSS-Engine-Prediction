@@ -15,7 +15,12 @@ import pytest
 import tensorflow as tf
 from tensorflow import keras
 
-from src.models.architectures import ModelRegistry, list_available_models
+from src.models.architectures import (
+    ModelRegistry,
+    compile_model_for_training,
+    list_available_models,
+)
+from tests.model_assertions import assert_model_tracks_metric
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +77,18 @@ class TestModelRegistry:
         with pytest.raises((KeyError, ValueError)):
             ModelRegistry.build("nonexistent_model_xyz", input_shape=SMALL_INPUT_SHAPE)
 
+    def test_compile_model_for_training_supports_issue_25_controls(self):
+        model = ModelRegistry.build("lstm", input_shape=SMALL_INPUT_SHAPE)
+        compiled = compile_model_for_training(
+            model,
+            learning_rate=0.002,
+            loss_name="huber",
+            gradient_clipnorm=1.5,
+        )
+        assert compiled.optimizer is not None
+        assert compiled.loss is not None
+        assert compiled.optimizer.clipnorm == 1.5
+
 
 # ---------------------------------------------------------------------------
 # Parametrised smoke tests — one test instance per registered model
@@ -108,8 +125,7 @@ class TestAllModelsSmoke:
 
     def test_has_mae_metric(self, model_name):
         model = _build(model_name)
-        metric_names = [m.name for m in model.metrics]
-        assert "mae" in metric_names, f"{model_name}: 'mae' not in metrics {metric_names}"
+        assert_model_tracks_metric(model, "mae")
 
     def test_forward_pass_finite(self, model_name):
         """One forward pass should produce finite predictions."""

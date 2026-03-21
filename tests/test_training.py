@@ -8,6 +8,7 @@ Note: tests for set_seeds() and get_git_hash() live alongside those functions
 (added as part of issue #22 / feat/reproducibility-seeds-22).
 """
 
+import json
 import numpy as np
 import pytest
 
@@ -130,3 +131,88 @@ class TestNormalizeData:
         _, X_val_n, X_test_n, _ = self.normalize_data(X_train)
         assert X_val_n is None
         assert X_test_n is None
+
+
+# ---------------------------------------------------------------------------
+# target preprocessing helpers
+# ---------------------------------------------------------------------------
+
+
+class TestTargetTransforms:
+    """Test issue-25 target preprocessing helpers."""
+
+    @pytest.fixture(autouse=True)
+    def _import(self):
+        from train_model import clip_rul_targets, inverse_transform_targets, transform_targets
+
+        self.clip_rul_targets = clip_rul_targets
+        self.inverse_transform_targets = inverse_transform_targets
+        self.transform_targets = transform_targets
+
+    def test_clip_rul_targets_caps_values(self):
+        y = np.array([10.0, 80.0, 150.0], dtype=np.float32)
+        clipped = self.clip_rul_targets(y, max_rul=100.0)
+        assert np.array_equal(clipped, np.array([10.0, 80.0, 100.0], dtype=np.float32))
+
+    def test_transform_targets_none_preserves_metric_space(self):
+        y_train = np.array([20.0, 50.0, 140.0], dtype=np.float32)
+        y_train_t, y_val_t, y_test_t, meta = self.transform_targets(
+            y_train,
+            np.array([130.0], dtype=np.float32),
+            np.array([160.0], dtype=np.float32),
+            clip_value=125.0,
+            scaling="none",
+        )
+        assert np.array_equal(y_train_t, np.array([20.0, 50.0, 125.0], dtype=np.float32))
+        assert np.array_equal(y_val_t, np.array([125.0], dtype=np.float32))
+        assert np.array_equal(y_test_t, np.array([125.0], dtype=np.float32))
+        assert meta["scale_min"] == 20.0
+        assert meta["scale_max"] == 125.0
+
+    def test_transform_targets_minmax_is_reversible(self):
+        y_train = np.array([25.0, 75.0, 125.0], dtype=np.float32)
+        y_train_t, y_val_t, y_test_t, meta = self.transform_targets(
+            y_train,
+            np.array([50.0], dtype=np.float32),
+            np.array([100.0], dtype=np.float32),
+            scaling="minmax",
+        )
+        assert np.allclose(y_train_t, np.array([0.0, 0.5, 1.0], dtype=np.float32))
+        assert np.allclose(y_val_t, np.array([0.25], dtype=np.float32))
+        assert np.allclose(y_test_t, np.array([0.75], dtype=np.float32))
+        restored = self.inverse_transform_targets(y_test_t, meta)
+        assert np.allclose(restored, np.array([100.0], dtype=np.float32))
+
+    def test_transform_targets_rejects_unknown_scaling(self):
+        with pytest.raises(ValueError, match="Unsupported target scaling"):
+            self.transform_targets(np.array([1.0], dtype=np.float32), scaling="zscore")
+
+
+class TestJsonSafety:
+    """Test JSON-safe serialization helpers used by training outputs."""
+
+    @pytest.fixture(autouse=True)
+    def _import(self):
+        from train_model import make_json_safe
+
+        self.make_json_safe = make_json_safe
+
+    def test_make_json_safe_converts_nested_numpy_scalars(self, tmp_path):
+        payload = {
+            "metrics_mean": {"rmse_normalized": np.float32(0.1107)},
+            "per_seed": {
+                "42": {"rmse_normalized": np.float32(0.1124), "best_epoch": np.int64(13)}
+            },
+        }
+
+        safe_payload = self.make_json_safe(payload)
+        output_path = tmp_path / "multiseed_summary.json"
+        with open(output_path, "w") as f:
+            json.dump(safe_payload, f, indent=2)
+
+        with open(output_path) as f:
+            written = json.load(f)
+
+        assert written["metrics_mean"]["rmse_normalized"] == pytest.approx(0.1107)
+        assert written["per_seed"]["42"]["rmse_normalized"] == pytest.approx(0.1124)
+        assert written["per_seed"]["42"]["best_epoch"] == 13

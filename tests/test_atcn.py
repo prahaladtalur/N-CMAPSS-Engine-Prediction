@@ -15,6 +15,7 @@ from src.models.atcn import (
     asymmetric_mse,
 )
 from src.models.architectures import ModelRegistry
+from tests.model_assertions import assert_model_tracks_metric
 
 
 class TestATCNModel:
@@ -55,7 +56,7 @@ class TestATCNModel:
         model = build_atcn_model(input_shape=(1000, 32))
         assert model.optimizer is not None
         assert model.loss is not None
-        assert "mae" in [m.name for m in model.metrics]
+        assert_model_tracks_metric(model, "mae")
 
     def test_atcn_registry_integration(self):
         """Test that ATCN is properly registered in ModelRegistry."""

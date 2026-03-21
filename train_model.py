@@ -62,6 +62,7 @@ except ImportError:
 from src.data.load_data import get_datasets
 from src.models.architectures import (
     ModelRegistry,
+    compile_model_for_training,
     get_model,
     list_available_models,
     get_model_info,
@@ -176,6 +177,70 @@ def normalize_data(
     return X_train_norm, X_val_norm, X_test_norm, scaler
 
 
+def clip_rul_targets(y: np.ndarray, max_rul: Optional[float] = None) -> np.ndarray:
+    """Cap RUL targets at ``max_rul`` when configured."""
+    clipped = np.asarray(y, dtype=np.float32).copy()
+    if max_rul is not None:
+        clipped = np.minimum(clipped, max_rul)
+    return clipped
+
+
+def transform_targets(
+    y_train: np.ndarray,
+    y_val: Optional[np.ndarray] = None,
+    y_test: Optional[np.ndarray] = None,
+    *,
+    clip_value: Optional[float] = None,
+    scaling: str = "none",
+) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
+    """Apply issue-25 target preprocessing experiments in a reversible way."""
+    y_train_metric = clip_rul_targets(y_train, clip_value)
+    y_val_metric = clip_rul_targets(y_val, clip_value) if y_val is not None else None
+    y_test_metric = clip_rul_targets(y_test, clip_value) if y_test is not None else None
+
+    metadata = {
+        "clip_value": float(clip_value) if clip_value is not None else None,
+        "scaling": scaling,
+        "scale_min": float(y_train_metric.min()) if y_train_metric.size else 0.0,
+        "scale_max": float(y_train_metric.max()) if y_train_metric.size else 0.0,
+    }
+
+    if scaling == "none":
+        return y_train_metric, y_val_metric, y_test_metric, metadata
+
+    if scaling != "minmax":
+        raise ValueError("Unsupported target scaling. Available: none, minmax")
+
+    y_range = metadata["scale_max"] - metadata["scale_min"]
+    if y_range == 0:
+        zeros = np.zeros_like(y_train_metric, dtype=np.float32)
+        y_val_scaled = (
+            np.zeros_like(y_val_metric, dtype=np.float32) if y_val_metric is not None else None
+        )
+        y_test_scaled = (
+            np.zeros_like(y_test_metric, dtype=np.float32) if y_test_metric is not None else None
+        )
+        return zeros, y_val_scaled, y_test_scaled, metadata
+
+    def _scale(values: Optional[np.ndarray]) -> Optional[np.ndarray]:
+        if values is None:
+            return None
+        return ((values - metadata["scale_min"]) / y_range).astype(np.float32)
+
+    return _scale(y_train_metric), _scale(y_val_metric), _scale(y_test_metric), metadata
+
+
+def inverse_transform_targets(y: np.ndarray, metadata: Dict[str, Any]) -> np.ndarray:
+    """Map model outputs back into the clipped/raw RUL space used for evaluation."""
+    values = np.asarray(y, dtype=np.float32)
+    if metadata.get("scaling") != "minmax":
+        return values
+
+    scale_min = metadata["scale_min"]
+    scale_max = metadata["scale_max"]
+    return values * (scale_max - scale_min) + scale_min
+
+
 def save_model_checkpoint(
     model: keras.Model,
     scaler: Optional[StandardScaler],
@@ -185,6 +250,7 @@ def save_model_checkpoint(
     run_name: str,
     y_min: float,
     y_max: float,
+    target_transform: Optional[Dict[str, Any]] = None,
     save_dir: str = "models",
 ) -> str:
     """
@@ -228,7 +294,18 @@ def save_model_checkpoint(
     # 3. Save RUL normalization parameters
     rul_scaler_path = model_dir / "rul_scaler.json"
     with open(rul_scaler_path, "w") as f:
-        json.dump({"y_min": float(y_min), "y_max": float(y_max)}, f, indent=2)
+        json.dump(
+            {
+                "y_min": float(y_min),
+                "y_max": float(y_max),
+                "clip_value": None if target_transform is None else target_transform.get("clip_value"),
+                "target_scaling": None if target_transform is None else target_transform.get("scaling"),
+                "scale_min": None if target_transform is None else target_transform.get("scale_min"),
+                "scale_max": None if target_transform is None else target_transform.get("scale_max"),
+            },
+            f,
+            indent=2,
+        )
     print(f"✓ RUL scaler saved: {rul_scaler_path.name}")
 
     # 4. Save training configuration
@@ -273,6 +350,10 @@ def save_model_checkpoint(
             "batch_size": config.get("batch_size"),
             "learning_rate": config.get("learning_rate"),
             "max_sequence_length": config.get("max_sequence_length"),
+            "loss_name": config.get("loss_name"),
+            "loss_alpha": config.get("loss_alpha"),
+            "rul_clip_value": config.get("rul_clip_value"),
+            "target_scaling": config.get("target_scaling"),
         },
         "files": {
             "model": "model.keras",
@@ -361,6 +442,21 @@ python predict.py --model-path {model_path} --input-file your_data.npy
     return str(model_dir)
 
 
+def make_json_safe(value):
+    """Recursively convert NumPy scalars and containers to JSON-safe values."""
+    if isinstance(value, dict):
+        return {k: make_json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [make_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [make_json_safe(v) for v in value]
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    return value
+
+
 def train_model(
     dev_X: List[np.ndarray],
     dev_y: List[np.ndarray],
@@ -407,6 +503,12 @@ def train_model(
         "batch_size": 32,
         "epochs": 50,
         "max_sequence_length": None,
+        "loss_name": "asymmetric_mse",
+        "loss_alpha": 2.0,
+        "rul_clip_value": None,
+        "target_scaling": "none",
+        "gradient_clipnorm": None,
+        "gradient_clipvalue": None,
         "validation_split": 0.2,
         "patience_early_stop": 10,
         "patience_lr_reduce": 5,
@@ -444,11 +546,6 @@ def train_model(
     X_train, y_train = prepare_sequences(dev_X, dev_y, config["max_sequence_length"])
     print(f"Training data shape: X={X_train.shape}, y={y_train.shape}")
 
-    # Calculate RUL normalization range for metrics
-    y_min = float(y_train.min())
-    y_max = float(y_train.max())
-    print(f"RUL range: [{y_min:.2f}, {y_max:.2f}] cycles")
-
     # Prepare validation data
     X_val, y_val = None, None
     if val_X is not None and val_y is not None:
@@ -460,6 +557,23 @@ def train_model(
     if test_X is not None and test_y is not None:
         X_test, y_test = prepare_sequences(test_X, test_y, config["max_sequence_length"])
         print(f"Test data shape: X={X_test.shape}, y={y_test.shape}")
+
+    y_train_fit, y_val_fit, y_test_fit, target_transform = transform_targets(
+        y_train,
+        y_val,
+        y_test,
+        clip_value=config["rul_clip_value"],
+        scaling=config["target_scaling"],
+    )
+
+    # Calculate RUL normalization range in the evaluation space.
+    y_min = float(target_transform["scale_min"])
+    y_max = float(target_transform["scale_max"])
+    print(f"RUL range: [{y_min:.2f}, {y_max:.2f}] cycles")
+    if config["rul_clip_value"] is not None:
+        print(f"RUL clipping enabled at: {config['rul_clip_value']:.2f} cycles")
+    if config["target_scaling"] != "none":
+        print(f"Target scaling enabled: {config['target_scaling']}")
 
     # Normalize if requested
     scaler = None
@@ -480,6 +594,14 @@ def train_model(
         dropout_rate=config["dropout_rate"],
         learning_rate=config["learning_rate"],
     )
+    model = compile_model_for_training(
+        model,
+        learning_rate=config["learning_rate"],
+        loss_name=config["loss_name"],
+        loss_alpha=config["loss_alpha"],
+        gradient_clipnorm=config["gradient_clipnorm"],
+        gradient_clipvalue=config["gradient_clipvalue"],
+    )
 
     print("\nModel Architecture:")
     model.summary()
@@ -494,7 +616,7 @@ def train_model(
     )
 
     # Prepare validation data for training
-    validation_data = (X_val, y_val) if X_val is not None else None
+    validation_data = (X_val, y_val_fit) if X_val is not None and y_val_fit is not None else None
 
     # Callbacks
     callbacks = [
@@ -527,10 +649,10 @@ def train_model(
     print("\nStarting training...")
     history = model.fit(
         X_train,
-        y_train,
+        y_train_fit,
         batch_size=config["batch_size"],
         epochs=config["epochs"],
-        validation_data=validation_data,
+        validation_data=(X_val, y_val_fit) if X_val is not None and y_val_fit is not None else None,
         validation_split=config["validation_split"] if validation_data is None else None,
         callbacks=callbacks,
         verbose=1,
@@ -541,8 +663,10 @@ def train_model(
     y_pred = None
     if X_test is not None and y_test is not None:
         print("\nEvaluating on test set...")
-        y_pred = model.predict(X_test, verbose=0).flatten()
-        test_metrics = compute_all_metrics(y_test, y_pred, y_min=y_min, y_max=y_max)
+        y_pred_fit = model.predict(X_test, verbose=0).flatten()
+        y_pred = inverse_transform_targets(y_pred_fit, target_transform)
+        y_test_eval = clip_rul_targets(y_test, config["rul_clip_value"])
+        test_metrics = compute_all_metrics(y_test_eval, y_pred, y_min=y_min, y_max=y_max)
 
         print(format_metrics(test_metrics))
 
@@ -610,16 +734,11 @@ def train_model(
             )
 
             # Plot predictions
-            plot_predictions(
-                y_test,
-                y_pred,
-                model_name,
-                save_path=f"{results_dir}/predictions.png",
-            )
+            plot_predictions(y_test_eval, y_pred, model_name, save_path=f"{results_dir}/predictions.png")
 
             # Plot error distribution
             plot_error_distribution(
-                y_test,
+                y_test_eval,
                 y_pred,
                 model_name,
                 save_path=f"{results_dir}/error_distribution.png",
@@ -644,11 +763,11 @@ def train_model(
                 columns=["true_rul", "predicted_rul", "error", "abs_error", "pct_error"],
                 data=[
                     [
-                        float(y_test[i]),
+                        float(y_test_eval[i]),
                         float(y_pred[i]),
-                        float(y_pred[i] - y_test[i]),
-                        float(abs(y_pred[i] - y_test[i])),
-                        float(abs(y_pred[i] - y_test[i]) / max(y_test[i], 1e-8) * 100),
+                        float(y_pred[i] - y_test_eval[i]),
+                        float(abs(y_pred[i] - y_test_eval[i])),
+                        float(abs(y_pred[i] - y_test_eval[i]) / max(y_test_eval[i], 1e-8) * 100),
                     ]
                     for i in sample_indices
                 ],
@@ -687,6 +806,10 @@ def train_model(
         "training/final_train_mae": float(history.history["mae"][-1]),
         "training/batch_size": int(config["batch_size"]),
         "training/learning_rate": float(config["learning_rate"]),
+        "training/loss_name": config["loss_name"],
+        "training/loss_alpha": float(config["loss_alpha"]),
+        "training/target_scaling": config["target_scaling"],
+        "training/rul_clip_value": config["rul_clip_value"],
         # Reproducibility
         "reproducibility/seed": seed,
         "reproducibility/git_hash": git_hash,
@@ -738,6 +861,7 @@ def train_model(
             run_name=run_name,
             y_min=y_min,
             y_max=y_max,
+            target_transform=target_transform,
         )
 
         # Log checkpoint location to wandb
@@ -1126,6 +1250,44 @@ Examples:
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size (default: 32)")
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs (default: 50)")
     parser.add_argument(
+        "--loss",
+        type=str,
+        default="asymmetric_mse",
+        choices=["asymmetric_mse", "mse", "mae", "huber", "log_cosh"],
+        help="Training loss to optimize (default: asymmetric_mse)",
+    )
+    parser.add_argument(
+        "--loss-alpha",
+        type=float,
+        default=2.0,
+        help="Late-prediction penalty multiplier for asymmetric_mse (default: 2.0)",
+    )
+    parser.add_argument(
+        "--rul-clip",
+        type=float,
+        default=None,
+        help="Cap RUL labels at this value before training/evaluation (default: disabled)",
+    )
+    parser.add_argument(
+        "--target-scaling",
+        type=str,
+        default="none",
+        choices=["none", "minmax"],
+        help="Optional target scaling strategy for training (default: none)",
+    )
+    parser.add_argument(
+        "--gradient-clipnorm",
+        type=float,
+        default=None,
+        help="Optional Adam clipnorm for training stability",
+    )
+    parser.add_argument(
+        "--gradient-clipvalue",
+        type=float,
+        default=None,
+        help="Optional Adam clipvalue for training stability",
+    )
+    parser.add_argument(
         "--patience-early-stop",
         type=int,
         default=10,
@@ -1294,6 +1456,16 @@ Examples:
         "learning_rate": json_training_config.get("learning_rate", args.lr),
         "batch_size": json_training_config.get("batch_size", args.batch_size),
         "epochs": json_training_config.get("epochs", args.epochs),
+        "loss_name": json_training_config.get("loss_name", json_training_config.get("loss", args.loss)),
+        "loss_alpha": json_training_config.get("loss_alpha", args.loss_alpha),
+        "rul_clip_value": json_training_config.get("rul_clip_value", args.rul_clip),
+        "target_scaling": json_training_config.get("target_scaling", args.target_scaling),
+        "gradient_clipnorm": json_training_config.get(
+            "gradient_clipnorm", args.gradient_clipnorm
+        ),
+        "gradient_clipvalue": json_training_config.get(
+            "gradient_clipvalue", args.gradient_clipvalue
+        ),
         "max_sequence_length": json_training_config.get("max_sequence_length", args.max_seq_length),
         "patience_early_stop": json_training_config.get(
             "patience_early_stop", args.patience_early_stop
@@ -1404,19 +1576,22 @@ Examples:
                 print("-" * 60)
 
                 # Save multi-seed summary as JSON
-                summary = {
-                    "model": model_name,
-                    "seeds": seeds,
-                    "num_seeds": len(seeds),
-                    "metrics_mean": {
-                        k: float(np.mean([m[k] for m in all_metrics if k in m]))
-                        for k in metric_keys
-                    },
-                    "metrics_std": {
-                        k: float(np.std([m[k] for m in all_metrics if k in m])) for k in metric_keys
-                    },
-                    "per_seed": {str(seeds[i]): all_metrics[i] for i in range(len(all_metrics))},
-                }
+                summary = make_json_safe(
+                    {
+                        "model": model_name,
+                        "seeds": seeds,
+                        "num_seeds": len(seeds),
+                        "metrics_mean": {
+                            k: float(np.mean([m[k] for m in all_metrics if k in m]))
+                            for k in metric_keys
+                        },
+                        "metrics_std": {
+                            k: float(np.std([m[k] for m in all_metrics if k in m]))
+                            for k in metric_keys
+                        },
+                        "per_seed": {str(seeds[i]): all_metrics[i] for i in range(len(all_metrics))},
+                    }
+                )
                 summary_path = f"results/{model_name}_multiseed_summary.json"
                 os.makedirs("results", exist_ok=True)
                 with open(summary_path, "w") as f:

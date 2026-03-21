@@ -29,7 +29,7 @@ The CLI handles:
 
 - **Single source of truth for data** – `src/data/load_data.py` sets up RUL datasets and returns `(dev, val, test)` splits ready for modeling.
 - **Curated model zoo** – `src/models/architectures.py` registers LSTM/GRU variants, CNN hybrids, TCN/WaveNet blocks, and a Transformer encoder; use `train_model.py --list-models` to inspect names.
-- **Consistent training loop** – `src/models/train.py` exposes `train_model(...)`, `compare_models(...)`, and `prepare_sequences(...)`, removing the legacy LSTM-only helpers.
+- **Consistent training loop** – `train_model.py` is the main CLI entry point, while `src/models` exposes `train_model(...)`, `compare_models(...)`, and `prepare_sequences(...)` through the package API.
 - **Evaluation utilities** – Metrics (`src/utils/metrics.py`) and visualization helpers (`src/utils/training_viz.py`, `src/utils/visualize.py`) cover both dataset analysis and post-training reporting.
 
 ## Project Layout
@@ -52,6 +52,7 @@ N-CMAPSS-Engine-Prediction
 | `python train_model.py --list-models` | View every registered architecture with short descriptions |
 | `python train_model.py --model <name> [--epochs 50 --units 128 ...]` | Train one model with custom hyperparameters |
 | `python train_model.py --compare --models lstm gru tcn` | Fit multiple architectures back-to-back and write comparison plots under `results/comparison/` |
+| `python scripts/tune_for_sota.py --experiment issue25_recipe --models mstcn transformer wavenet --fd 1 --offline` | Run the issue-25 benchmark recipe around clipping, target scaling, Huber loss, and gradient clipping |
 | `python scripts/prepare_ensemble.py` | **NEW:** Prepare ensemble models (MSTCN + Transformer + WaveNet) |
 | `python predict.py --ensemble --fd 1` | **NEW:** Run ensemble predictions for maximum accuracy |
 | `python scripts/compare_saved_runs.py` | Build a comparison plot from saved runs (no retraining) |

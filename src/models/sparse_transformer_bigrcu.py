@@ -114,12 +114,7 @@ class LRLSAttention(layers.Layer):
         self.num_global_tokens = num_global_tokens
         self.dropout_rate = dropout_rate
 
-        self.mha = layers.MultiHeadAttention(
-            num_heads=num_heads,
-            key_dim=None,  # Will be set in build()
-            dropout=dropout_rate,
-            name="multi_head_attention",
-        )
+        self.mha = None
         self.layernorm1 = layers.LayerNormalization(epsilon=1e-6, name="layernorm1")
         self.layernorm2 = layers.LayerNormalization(epsilon=1e-6, name="layernorm2")
         self.ffn = None
@@ -127,9 +122,10 @@ class LRLSAttention(layers.Layer):
 
     def build(self, input_shape: Tuple[int, ...]):
         feature_dim = input_shape[-1]
-        key_dim = feature_dim // self.num_heads
+        key_dim = max(1, feature_dim // self.num_heads)
 
-        # Override MHA with correct key_dim
+        # Keras 3 validates key_dim eagerly, so instantiate MHA only after the
+        # input feature size is known.
         self.mha = layers.MultiHeadAttention(
             num_heads=self.num_heads,
             key_dim=key_dim,
@@ -160,38 +156,20 @@ class LRLSAttention(layers.Layer):
         Returns:
             attention_mask: (seq_length, seq_length) boolean mask
         """
-        # Create full False mask (all positions masked)
-        mask = tf.zeros((seq_length, seq_length), dtype=tf.bool)
+        positions = tf.range(seq_length)
+        row_positions = tf.expand_dims(positions, axis=1)
+        col_positions = tf.expand_dims(positions, axis=0)
 
-        # Local window attention
+        # Local window attention around each token.
         local_radius = self.local_window // 2
-        for i in range(seq_length):
-            start = max(0, i - local_radius)
-            end = min(seq_length, i + local_radius + 1)
+        mask = tf.abs(row_positions - col_positions) <= local_radius
 
-            # Mark local window as True (unmasked)
-            indices = tf.range(start, end)
-            updates = tf.ones(end - start, dtype=tf.bool)
-            mask = tf.tensor_scatter_nd_update(
-                mask, tf.stack([tf.fill([end - start], i), indices], axis=1), updates
-            )
-
-        # Global token attention (first g tokens attend to all, all attend to first g)
+        # Global token attention (first g tokens attend to all, all attend to first g).
         if self.num_global_tokens > 0:
-            g = min(self.num_global_tokens, seq_length)
-            # First g tokens can attend to all positions
-            mask = tf.tensor_scatter_nd_update(
-                mask,
-                tf.reshape(tf.range(g * seq_length), [g * seq_length, 1]),
-                tf.ones(g * seq_length, dtype=tf.bool),
-            )
-            # All positions can attend to first g tokens
-            for i in range(seq_length):
-                indices = tf.range(g)
-                updates = tf.ones(g, dtype=tf.bool)
-                mask = tf.tensor_scatter_nd_update(
-                    mask, tf.stack([tf.fill([g], i), indices], axis=1), updates
-                )
+            g = tf.minimum(self.num_global_tokens, seq_length)
+            global_rows = row_positions < g
+            global_cols = col_positions < g
+            mask = tf.logical_or(mask, tf.logical_or(global_rows, global_cols))
 
         # Convert to attention mask format (1.0 for attended, 0.0 for masked)
         return tf.cast(mask, tf.float32)

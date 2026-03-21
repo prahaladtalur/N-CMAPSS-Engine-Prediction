@@ -11,6 +11,7 @@ from tensorflow import keras
 
 from src.models.mstcn import build_mstcn_model, GlobalFusionAttention, asymmetric_mse
 from src.models.architectures import ModelRegistry
+from tests.model_assertions import assert_model_tracks_metric
 
 
 class TestMSTCNModel:
@@ -65,7 +66,7 @@ class TestMSTCNModel:
         model = build_mstcn_model(input_shape=(1000, 32))
         assert model.optimizer is not None
         assert model.loss is not None
-        assert "mae" in [m.name for m in model.metrics]
+        assert_model_tracks_metric(model, "mae")
 
     def test_mstcn_registry_integration(self):
         """Test that MSTCN is properly registered in ModelRegistry."""
