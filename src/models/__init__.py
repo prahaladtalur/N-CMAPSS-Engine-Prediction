@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from src.models.base import BaseModel, asymmetric_mse
+from src.models.base import BaseModel, asymmetric_mse, multi_zone_mse
 from src.models.registry import ModelRegistry
 
 # Add project root to path to import train_model when needed.
@@ -130,6 +130,7 @@ __all__ = [
     "BaseModel",
     "ModelRegistry",
     "asymmetric_mse",
+    "multi_zone_mse",
     "prepare_sequences",
     "train_model",
     "compare_models",
