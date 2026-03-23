@@ -59,7 +59,7 @@ try:
 except ImportError:
     pass  # dotenv is optional
 
-from src.data.load_data import get_datasets
+from src.data.load_data import get_datasets, PHYSICAL_CHANNELS
 from src.models.architectures import (
     ModelRegistry,
     compile_model_for_training,
@@ -1573,6 +1573,13 @@ Examples:
              "Captures rate-of-change in sensor readings — a direct degradation signal.",
     )
     parser.add_argument(
+        "--drop-virtual",
+        action="store_true",
+        help="Drop the 14 virtual sensor channels (X_v, channels 18-31), keeping only "
+             "operating conditions (W) and physical sensors (X_s) — 18 features instead of 32. "
+             "Literature reports 16-47%% RMSE reduction from this change.",
+    )
+    parser.add_argument(
         "--no-visualize",
         action="store_true",
         help="Disable visualization generation",
@@ -1690,8 +1697,9 @@ Examples:
         sys.exit(1)
 
     # Load data
+    feature_select = PHYSICAL_CHANNELS if args.drop_virtual else None
     print(f"\nLoading N-CMAPSS FD{args.fd} dataset...")
-    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd)
+    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd, feature_select=feature_select)
     val_X, val_y = val_pair if val_pair else (None, None)
 
     # Training configuration - JSON config overrides CLI args

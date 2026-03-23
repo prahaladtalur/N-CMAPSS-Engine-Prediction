@@ -51,6 +51,7 @@ def get_model_info() -> dict[str, str]:
         "transformer": "Transformer encoder - self-attention based, very SOTA",
         "mdfa": "MDFA - Multi-scale dilated fusion attention (paper SOTA, RMSE_norm 0.021-0.032)",
         "cnn_lstm_attention": "CNN-LSTM-Attention - 2024 SOTA (CMAPSS RMSE 13.907-16.637)",
+        "cbam_cnn_lstm": "CBAM-CNN-LSTM - channel+temporal attention (DS02 RMSE 5.50, Li et al. PeerJ 2022)",
         "cata_tcn": "CATA-TCN - Channel+Temporal Attention over TCN backbone",
         "ttsnet": "TTSNet - Transformer+TCN+Self-Attention late-fusion hybrid",
         "atcn": "ATCN - Attention-based TCN with ISA and squeeze-excitation (2023 SOTA)",
