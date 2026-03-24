@@ -1493,7 +1493,7 @@ Examples:
         "--loss",
         type=str,
         default="asymmetric_mse",
-        choices=["asymmetric_mse", "mse", "mae", "huber", "log_cosh"],
+        choices=["asymmetric_mse", "multi_zone_mse", "mse", "mae", "huber", "log_cosh"],
         help="Training loss to optimize (default: asymmetric_mse)",
     )
     parser.add_argument(
