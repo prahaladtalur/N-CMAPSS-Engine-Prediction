@@ -59,7 +59,7 @@ try:
 except ImportError:
     pass  # dotenv is optional
 
-from src.data.load_data import get_datasets
+from src.data.load_data import get_datasets, PHYSICAL_CHANNELS
 from src.models.architectures import (
     ModelRegistry,
     compile_model_for_training,
@@ -109,6 +109,7 @@ def prepare_sequences(
     X: List[np.ndarray],
     y: List[np.ndarray],
     max_sequence_length: Optional[int] = None,
+    diff_features: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Prepare sequences from list of arrays for training.
@@ -117,6 +118,11 @@ def prepare_sequences(
         X: List of feature arrays (num_cycles, timesteps, num_sensors)
         y: List of label arrays (num_cycles,)
         max_sequence_length: Maximum sequence length (None for full sequences)
+        diff_features: If True, append cycle-to-cycle differential features.
+            For each cycle t, computes mean(cycle_t) - mean(cycle_{t-1}) and
+            broadcasts it across the time axis, doubling the feature count.
+            Cycle 0 uses zeros. Captures rate-of-change in sensor readings,
+            which is a direct degradation signal.
 
     Returns:
         Tuple of (X_sequences, y_sequences) as numpy arrays
@@ -126,11 +132,24 @@ def prepare_sequences(
 
     for unit_X, unit_y in zip(X, y):
         num_cycles = unit_X.shape[0]
+
+        # Pre-compute per-cycle means for differential features
+        if diff_features:
+            cycle_means = np.mean(unit_X, axis=1)  # (num_cycles, num_sensors)
+            prev_means = np.concatenate([cycle_means[:1] * 0, cycle_means[:-1]], axis=0)
+            cycle_deltas = cycle_means - prev_means  # (num_cycles, num_sensors)
+
         for cycle_idx in range(num_cycles):
             sequence = unit_X[cycle_idx]
             if max_sequence_length is not None:
-                # Take the last max_sequence_length timesteps
                 sequence = sequence[-max_sequence_length:]
+
+            if diff_features:
+                # Broadcast delta across the time axis and concatenate
+                delta = cycle_deltas[cycle_idx]  # (num_sensors,)
+                delta_broadcast = np.broadcast_to(delta, (sequence.shape[0], delta.shape[0]))
+                sequence = np.concatenate([sequence, delta_broadcast], axis=-1)
+
             X_sequences.append(sequence)
             y_sequences.append(unit_y[cycle_idx])
 
@@ -457,6 +476,187 @@ def make_json_safe(value):
     return value
 
 
+def build_final_training_metrics(history: Dict[str, List[float]]) -> Dict[str, float]:
+    """Extract the last logged training metrics from a Keras history dict."""
+    final_metrics = {
+        "epochs_trained": int(len(history["loss"])),
+        "final_train_loss": float(history["loss"][-1]),
+    }
+
+    for metric_name in ("rmse", "mae", "mape"):
+        if metric_name in history:
+            final_metrics[f"final_train_{metric_name}"] = float(history[metric_name][-1])
+
+    for metric_name in ("val_loss", "val_rmse", "val_mae", "val_mape"):
+        if metric_name in history:
+            final_metrics[f"final_{metric_name}"] = float(history[metric_name][-1])
+
+    return final_metrics
+
+
+def build_best_epoch_summary(history: Dict[str, List[float]]) -> Dict[str, Any]:
+    """Summarize the best epoch based on validation loss when available."""
+    monitor = "val_loss" if "val_loss" in history else "loss"
+    best_epoch_idx = int(np.argmin(history[monitor]))
+    summary = {
+        "training/best_epoch": best_epoch_idx + 1,
+        "training/best_monitor_name": monitor,
+        "training/best_monitor_value": float(history[monitor][best_epoch_idx]),
+    }
+
+    for metric_name in (
+        "loss",
+        "rmse",
+        "mae",
+        "mape",
+        "val_loss",
+        "val_rmse",
+        "val_mae",
+        "val_mape",
+    ):
+        if metric_name in history:
+            summary[f"training/best_{metric_name}"] = float(history[metric_name][best_epoch_idx])
+
+    return summary
+
+
+def _describe_split(
+    X_split: Optional[List[np.ndarray]],
+    y_split: Optional[List[np.ndarray]],
+) -> Optional[Dict[str, Any]]:
+    """Build lightweight metadata for a dataset split without serializing raw arrays."""
+    if X_split is None or y_split is None:
+        return None
+
+    if isinstance(X_split, np.ndarray):
+        unit_count = int(X_split.shape[0])
+        cycle_count = int(X_split.shape[0])
+        timesteps = int(X_split.shape[1]) if X_split.ndim >= 2 else 0
+        num_features = int(X_split.shape[2]) if X_split.ndim >= 3 else 0
+    else:
+        unit_count = len(X_split)
+        cycle_count = int(sum(unit.shape[0] for unit in X_split))
+        timesteps = int(X_split[0].shape[1]) if unit_count else 0
+        num_features = int(X_split[0].shape[2]) if unit_count else 0
+
+    if isinstance(y_split, np.ndarray):
+        labels = y_split.reshape(-1)
+    else:
+        labels = np.concatenate(y_split) if len(y_split) > 0 else np.array([], dtype=np.float32)
+
+    return {
+        "units": unit_count,
+        "cycles": cycle_count,
+        "timesteps": timesteps,
+        "num_features": num_features,
+        "rul_min": float(labels.min()) if labels.size else None,
+        "rul_max": float(labels.max()) if labels.size else None,
+    }
+
+
+def _describe_local_directory(path: Path) -> Dict[str, Any]:
+    """Return basic stats for a local cache directory."""
+    resolved = path.resolve()
+    if not resolved.exists():
+        return {
+            "path": str(resolved),
+            "exists": False,
+            "file_count": 0,
+            "size_bytes": 0,
+        }
+
+    file_count = 0
+    size_bytes = 0
+    for file_path in resolved.rglob("*"):
+        if file_path.is_file():
+            file_count += 1
+            size_bytes += file_path.stat().st_size
+
+    return {
+        "path": str(resolved),
+        "exists": True,
+        "file_count": file_count,
+        "size_bytes": size_bytes,
+    }
+
+
+def build_dataset_manifest(
+    dev_X: List[np.ndarray],
+    dev_y: List[np.ndarray],
+    val_X: Optional[List[np.ndarray]],
+    val_y: Optional[List[np.ndarray]],
+    test_X: Optional[List[np.ndarray]],
+    test_y: Optional[List[np.ndarray]],
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Describe the local dataset/cache state for experiment tracking."""
+    data_root = Path(os.environ.get("RUL_DATASETS_DATA_ROOT", "data/raw"))
+    manifest = {
+        "fd": None if config is None else config.get("fd"),
+        "cache_root": str(data_root.resolve()),
+        "cache": _describe_local_directory(data_root),
+        "splits": {
+            "dev": _describe_split(dev_X, dev_y),
+            "val": _describe_split(val_X, val_y),
+            "test": _describe_split(test_X, test_y),
+        },
+        "raw_data_uploaded_to_wandb": False,
+        "notes": "This manifest logs local cache metadata only; raw N-CMAPSS arrays are not uploaded automatically.",
+    }
+    return manifest
+
+
+def save_dataset_manifest(run_name: str, dataset_manifest: Dict[str, Any]) -> str:
+    """Persist dataset metadata locally so it can be attached to W&B as an artifact."""
+    results_dir = Path("results") / run_name
+    results_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = results_dir / "dataset_manifest.json"
+    with open(manifest_path, "w") as f:
+        json.dump(make_json_safe(dataset_manifest), f, indent=2)
+    return str(manifest_path)
+
+
+def log_dataset_manifest_artifact(run_name: str, dataset_manifest: Dict[str, Any]) -> str:
+    """Attach dataset metadata to the current W&B run without uploading raw training data."""
+    manifest_path = save_dataset_manifest(run_name, dataset_manifest)
+    artifact = wandb.Artifact(
+        name=f"{run_name}-dataset-manifest",
+        type="dataset",
+        description="Local N-CMAPSS cache metadata and split stats. Raw training arrays are not uploaded.",
+        metadata={
+            "fd": dataset_manifest.get("fd"),
+            "cache_root": dataset_manifest.get("cache_root"),
+            "raw_data_uploaded_to_wandb": False,
+        },
+    )
+    artifact.add_file(manifest_path, name="dataset_manifest.json")
+    wandb.log_artifact(artifact)
+    return manifest_path
+
+
+def log_checkpoint_artifact(
+    checkpoint_dir: str,
+    run_name: str,
+    model_name: str,
+    test_metrics: Dict[str, float],
+) -> str:
+    """Upload the saved checkpoint directory as a W&B model artifact."""
+    artifact = wandb.Artifact(
+        name=f"{run_name}-checkpoint",
+        type="model",
+        description="Trained model checkpoint and inference artifacts.",
+        metadata={
+            "model_name": model_name,
+            "run_name": run_name,
+            "rmse": test_metrics.get("rmse"),
+            "rmse_normalized": test_metrics.get("rmse_normalized"),
+        },
+    )
+    artifact.add_dir(checkpoint_dir)
+    wandb.log_artifact(artifact)
+    return artifact.name
+
+
 def train_model(
     dev_X: List[np.ndarray],
     dev_y: List[np.ndarray],
@@ -468,7 +668,8 @@ def train_model(
     config: Optional[Dict[str, Any]] = None,
     project_name: str = "n-cmapss-rul-prediction",
     run_name: Optional[str] = None,
-    normalize: bool = True,
+    normalize: bool = False,
+    diff_features: bool = False,
     visualize: bool = True,
     use_early_stop: bool = True,
     save_checkpoint: bool = True,
@@ -543,20 +744,44 @@ def train_model(
 
     # Prepare training data
     print(f"\nPreparing training data for {model_name}...")
-    X_train, y_train = prepare_sequences(dev_X, dev_y, config["max_sequence_length"])
+    X_train, y_train = prepare_sequences(dev_X, dev_y, config["max_sequence_length"], diff_features=diff_features)
     print(f"Training data shape: X={X_train.shape}, y={y_train.shape}")
 
     # Prepare validation data
+    raw_val_X, raw_val_y = val_X, val_y
     X_val, y_val = None, None
     if val_X is not None and val_y is not None:
-        X_val, y_val = prepare_sequences(val_X, val_y, config["max_sequence_length"])
+        X_val, y_val = prepare_sequences(val_X, val_y, config["max_sequence_length"], diff_features=diff_features)
         print(f"Validation data shape: X={X_val.shape}, y={y_val.shape}")
+    else:
+        print(
+            f"⚠️  No validation units provided — falling back to validation_split="
+            f"{config['validation_split']} (random slice of training cycles, not held-out engines). "
+            "This is a weaker hold-out; prefer passing a unit-level val split."
+        )
 
     # Prepare test data
+    raw_test_X, raw_test_y = test_X, test_y
     X_test, y_test = None, None
     if test_X is not None and test_y is not None:
-        X_test, y_test = prepare_sequences(test_X, test_y, config["max_sequence_length"])
+        X_test, y_test = prepare_sequences(test_X, test_y, config["max_sequence_length"], diff_features=diff_features)
         print(f"Test data shape: X={X_test.shape}, y={y_test.shape}")
+
+    dataset_manifest = build_dataset_manifest(
+        dev_X, dev_y, raw_val_X, raw_val_y, raw_test_X, raw_test_y, config
+    )
+    dataset_manifest_path = log_dataset_manifest_artifact(run_name, dataset_manifest)
+    wandb.summary.update(
+        {
+            "data/fd": dataset_manifest.get("fd"),
+            "data/cache_root": dataset_manifest["cache"]["path"],
+            "data/cache_exists": dataset_manifest["cache"]["exists"],
+            "data/cache_files": int(dataset_manifest["cache"]["file_count"]),
+            "data/cache_size_bytes": int(dataset_manifest["cache"]["size_bytes"]),
+            "data/raw_uploaded_to_wandb": False,
+            "data/manifest_path": dataset_manifest_path,
+        }
+    )
 
     y_train_fit, y_val_fit, y_test_fit, target_transform = transform_targets(
         y_train,
@@ -776,15 +1001,7 @@ def train_model(
             wandb.log({"predictions_table": predictions_table})
 
     # Log final training metrics
-    final_metrics = {
-        "final_train_loss": history.history["loss"][-1],
-        "final_train_mae": history.history["mae"][-1],
-        "epochs_trained": len(history.history["loss"]),
-    }
-    if validation_data:
-        final_metrics["final_val_loss"] = history.history["val_loss"][-1]
-        final_metrics["final_val_mae"] = history.history["val_mae"][-1]
-
+    final_metrics = build_final_training_metrics(history.history)
     wandb.log(final_metrics)
 
     # Enhanced W&B run summary with comprehensive metadata
@@ -803,7 +1020,6 @@ def train_model(
         # Training Config
         "training/epochs_trained": int(len(history.history["loss"])),
         "training/final_train_loss": float(history.history["loss"][-1]),
-        "training/final_train_mae": float(history.history["mae"][-1]),
         "training/batch_size": int(config["batch_size"]),
         "training/learning_rate": float(config["learning_rate"]),
         "training/loss_name": config["loss_name"],
@@ -815,15 +1031,27 @@ def train_model(
         "reproducibility/git_hash": git_hash,
     }
 
+    if "rmse" in history.history:
+        summary_data["training/final_train_rmse"] = float(history.history["rmse"][-1])
+    if "mae" in history.history:
+        summary_data["training/final_train_mae"] = float(history.history["mae"][-1])
+    if "mape" in history.history:
+        summary_data["training/final_train_mape"] = float(history.history["mape"][-1])
+
     # Add validation metrics if available
     if validation_data:
         summary_data.update(
             {
                 "data/val_samples": int(len(y_val)),
                 "training/final_val_loss": float(history.history["val_loss"][-1]),
-                "training/final_val_mae": float(history.history["val_mae"][-1]),
             }
         )
+        if "val_rmse" in history.history:
+            summary_data["training/final_val_rmse"] = float(history.history["val_rmse"][-1])
+        if "val_mae" in history.history:
+            summary_data["training/final_val_mae"] = float(history.history["val_mae"][-1])
+        if "val_mape" in history.history:
+            summary_data["training/final_val_mape"] = float(history.history["val_mape"][-1])
 
     # Add test metrics if available
     if test_metrics:
@@ -848,6 +1076,7 @@ def train_model(
                 }
             )
 
+    summary_data.update(build_best_epoch_summary(history.history))
     wandb.summary.update(summary_data)
 
     # Save model checkpoint with all artifacts
@@ -866,7 +1095,18 @@ def train_model(
 
         # Log checkpoint location to wandb
         wandb.log({"checkpoint/saved_path": checkpoint_dir})
-        wandb.summary.update({"checkpoint/directory": checkpoint_dir})
+        checkpoint_artifact_name = log_checkpoint_artifact(
+            checkpoint_dir=checkpoint_dir,
+            run_name=run_name,
+            model_name=model_name,
+            test_metrics=test_metrics,
+        )
+        wandb.summary.update(
+            {
+                "checkpoint/directory": checkpoint_dir,
+                "checkpoint/artifact_name": checkpoint_artifact_name,
+            }
+        )
     elif not save_checkpoint:
         print("\n⚠️  Model checkpoint saving disabled (--no-save flag)")
 
@@ -1089,7 +1329,7 @@ def load_config_from_json(config_path: str) -> Dict[str, Any]:
             "config": config,
             "fd": data.get("fd", 1),
             "project_name": data.get("project_name", "n-cmapss-rul-prediction"),
-            "normalize": data.get("normalize", True),
+            "normalize": data.get("normalize", False),
             "visualize": data.get("visualize", True),
         }
     else:
@@ -1099,7 +1339,7 @@ def load_config_from_json(config_path: str) -> Dict[str, Any]:
             "config": data.get("config", {}),
             "fd": data.get("fd", 1),
             "project_name": data.get("project_name", "n-cmapss-rul-prediction"),
-            "normalize": data.get("normalize", True),
+            "normalize": data.get("normalize", False),
             "visualize": data.get("visualize", True),
         }
 
@@ -1253,7 +1493,7 @@ Examples:
         "--loss",
         type=str,
         default="asymmetric_mse",
-        choices=["asymmetric_mse", "mse", "mae", "huber", "log_cosh"],
+        choices=["asymmetric_mse", "multi_zone_mse", "mse", "mae", "huber", "log_cosh"],
         help="Training loss to optimize (default: asymmetric_mse)",
     )
     parser.add_argument(
@@ -1322,9 +1562,22 @@ Examples:
 
     # Other options
     parser.add_argument(
-        "--no-normalize",
+        "--normalize",
         action="store_true",
-        help="Disable feature normalization",
+        help="Apply StandardScaler on top of the min-max scaling already done by NCmapssReader (double normalization — not recommended)",
+    )
+    parser.add_argument(
+        "--diff-features",
+        action="store_true",
+        help="Append cycle-to-cycle differential features (doubles feature count). "
+             "Captures rate-of-change in sensor readings — a direct degradation signal.",
+    )
+    parser.add_argument(
+        "--drop-virtual",
+        action="store_true",
+        help="Drop the 14 virtual sensor channels (X_v, channels 18-31), keeping only "
+             "operating conditions (W) and physical sensors (X_s) — 18 features instead of 32. "
+             "Literature reports 16-47%% RMSE reduction from this change.",
     )
     parser.add_argument(
         "--no-visualize",
@@ -1426,7 +1679,7 @@ Examples:
             args.model = json_config["model_name"]
             args.fd = json_config["fd"]
             args.project = json_config["project_name"]
-            args.no_normalize = not json_config["normalize"]
+            args.normalize = json_config["normalize"]
             args.no_visualize = not json_config["visualize"]
 
             # Merge JSON config into training config
@@ -1444,12 +1697,14 @@ Examples:
         sys.exit(1)
 
     # Load data
+    feature_select = PHYSICAL_CHANNELS if args.drop_virtual else None
     print(f"\nLoading N-CMAPSS FD{args.fd} dataset...")
-    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd)
+    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd, feature_select=feature_select)
     val_X, val_y = val_pair if val_pair else (None, None)
 
     # Training configuration - JSON config overrides CLI args
     config = {
+        "fd": args.fd,
         "units": json_training_config.get("units", args.units),
         "dense_units": json_training_config.get("dense_units", args.dense_units),
         "dropout_rate": json_training_config.get("dropout_rate", args.dropout),
@@ -1543,7 +1798,8 @@ Examples:
                 config=config,
                 project_name=args.project,
                 run_name=run_name,
-                normalize=not args.no_normalize,
+                normalize=args.normalize,
+                diff_features=args.diff_features,
                 visualize=not args.no_visualize and len(seeds) == 1,
                 use_early_stop=config.get("use_early_stop", True),
                 save_checkpoint=not args.no_save,
@@ -1607,9 +1863,9 @@ Examples:
             from src.utils.interpretability import generate_interpretability_report
 
             print("\nGenerating interpretability report...")
-            X_te, y_te = prepare_sequences(test_X, test_y, config.get("max_sequence_length"))
-            if not args.no_normalize:
-                X_tr, _ = prepare_sequences(dev_X, dev_y, config.get("max_sequence_length"))
+            X_te, y_te = prepare_sequences(test_X, test_y, config.get("max_sequence_length"), diff_features=args.diff_features)
+            if args.normalize:
+                X_tr, _ = prepare_sequences(dev_X, dev_y, config.get("max_sequence_length"), diff_features=args.diff_features)
                 _, _, X_te, _ = normalize_data(X_tr, None, X_te)
             generate_interpretability_report(
                 model=model,

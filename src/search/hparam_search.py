@@ -137,7 +137,8 @@ def execute_training_job(job: Dict) -> Dict:
         (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=job["fd"])
         val_X, val_y = val_pair if val_pair else (None, None)
 
-        normalize = job.get("normalize", True)
+        normalize = job.get("normalize", False)
+        diff_features = job.get("diff_features", False)
         visualize = job.get("visualize", False)
         project_name = job.get("project_name", "n-cmapss-rul-search")
         run_name = job.get("run_name") or f"{job['model']}-{job['job_id']}"
@@ -156,6 +157,7 @@ def execute_training_job(job: Dict) -> Dict:
             project_name=project_name,
             run_name=run_name,
             normalize=normalize,
+            diff_features=diff_features,
             visualize=visualize,
         )
 
@@ -182,12 +184,14 @@ def run_hparam_search(args):
     initial_limit = max(1, args.search_workers)
     pool_cap = args.search_max_workers or max(initial_limit, os.cpu_count() or 1)
 
-    normalize = not args.no_normalize
+    normalize = args.normalize
+    diff_features = args.diff_features
     visualize = not args.no_visualize
     project_name = spec.get("project_name", args.project)
 
     for job in jobs:
         job["normalize"] = spec.get("normalize", normalize)
+        job["diff_features"] = spec.get("diff_features", diff_features)
         job["visualize"] = spec.get("visualize", visualize)
         job["project_name"] = project_name
         job["run_name"] = f"{search_name}-{job['job_id']}"
