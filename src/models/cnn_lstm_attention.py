@@ -233,6 +233,10 @@ def build_cnn_lstm_attention_model(
         return loss
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, loss=asymmetric_mse(), metrics=["mae", "mape"])
+    model.compile(
+        optimizer=optimizer,
+        loss=asymmetric_mse(),
+        metrics=[tf.keras.metrics.RootMeanSquaredError(name="rmse"), "mae", "mape"],
+    )
 
     return model

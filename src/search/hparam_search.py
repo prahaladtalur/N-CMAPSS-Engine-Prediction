@@ -194,6 +194,9 @@ def run_hparam_search(args):
         job["diff_features"] = spec.get("diff_features", diff_features)
         job["visualize"] = spec.get("visualize", visualize)
         job["project_name"] = project_name
+        # Propagate LR schedule settings into each job's config so train_model picks them up
+        job["config"].setdefault("lr_schedule", spec.get("lr_schedule", args.lr_schedule))
+        job["config"].setdefault("warmup_epochs", spec.get("warmup_epochs", args.warmup_epochs))
         job["run_name"] = f"{search_name}-{job['job_id']}"
 
     pending_jobs = iter(jobs)

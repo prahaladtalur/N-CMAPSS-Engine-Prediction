@@ -127,6 +127,10 @@ class TestAllModelsSmoke:
         model = _build(model_name)
         assert_model_tracks_metric(model, "mae")
 
+    def test_has_rmse_metric(self, model_name):
+        model = _build(model_name)
+        assert_model_tracks_metric(model, "rmse")
+
     def test_forward_pass_finite(self, model_name):
         """One forward pass should produce finite predictions."""
         model = _build(model_name)

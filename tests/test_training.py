@@ -216,3 +216,78 @@ class TestJsonSafety:
         assert written["metrics_mean"]["rmse_normalized"] == pytest.approx(0.1107)
         assert written["per_seed"]["42"]["rmse_normalized"] == pytest.approx(0.1124)
         assert written["per_seed"]["42"]["best_epoch"] == 13
+
+
+class TestTrainingLoggingHelpers:
+    """Test pure helpers used to build W&B logging payloads."""
+
+    @pytest.fixture(autouse=True)
+    def _import(self):
+        from train_model import (
+            build_best_epoch_summary,
+            build_dataset_manifest,
+            build_final_training_metrics,
+        )
+
+        self.build_best_epoch_summary = build_best_epoch_summary
+        self.build_dataset_manifest = build_dataset_manifest
+        self.build_final_training_metrics = build_final_training_metrics
+
+    def test_build_final_training_metrics_includes_rmse(self):
+        history = {
+            "loss": [5.0, 4.0],
+            "rmse": [2.2, 2.0],
+            "mae": [1.8, 1.6],
+            "val_loss": [4.8, 3.9],
+            "val_rmse": [2.1, 1.9],
+        }
+
+        metrics = self.build_final_training_metrics(history)
+
+        assert metrics["epochs_trained"] == 2
+        assert metrics["final_train_loss"] == pytest.approx(4.0)
+        assert metrics["final_train_rmse"] == pytest.approx(2.0)
+        assert metrics["final_val_rmse"] == pytest.approx(1.9)
+
+    def test_build_best_epoch_summary_prefers_val_loss(self):
+        history = {
+            "loss": [5.0, 4.6, 4.4],
+            "rmse": [2.4, 2.2, 2.1],
+            "val_loss": [4.8, 4.1, 4.3],
+            "val_rmse": [2.3, 2.0, 2.1],
+        }
+
+        summary = self.build_best_epoch_summary(history)
+
+        assert summary["training/best_epoch"] == 2
+        assert summary["training/best_monitor_name"] == "val_loss"
+        assert summary["training/best_val_rmse"] == pytest.approx(2.0)
+        assert summary["training/best_rmse"] == pytest.approx(2.2)
+
+    def test_build_dataset_manifest_tracks_local_cache_only(self, monkeypatch, tmp_path):
+        data_root = tmp_path / "data-root"
+        data_root.mkdir()
+        cached_file = data_root / "cache.bin"
+        cached_file.write_bytes(b"123456")
+        monkeypatch.setenv("RUL_DATASETS_DATA_ROOT", str(data_root))
+
+        unit_X = np.ones((2, 5, 3), dtype=np.float32)
+        unit_y = np.array([10.0, 5.0], dtype=np.float32)
+
+        manifest = self.build_dataset_manifest(
+            dev_X=[unit_X],
+            dev_y=[unit_y],
+            val_X=None,
+            val_y=None,
+            test_X=[unit_X],
+            test_y=[unit_y],
+            config={"fd": 3},
+        )
+
+        assert manifest["fd"] == 3
+        assert manifest["cache"]["exists"] is True
+        assert manifest["cache"]["file_count"] == 1
+        assert manifest["cache"]["size_bytes"] == 6
+        assert manifest["raw_data_uploaded_to_wandb"] is False
+        assert manifest["splits"]["dev"]["cycles"] == 2
+        assert manifest["splits"]["test"]["num_features"] == 3

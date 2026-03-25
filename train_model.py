@@ -156,6 +156,53 @@ def prepare_sequences(
     return np.array(X_sequences), np.array(y_sequences)
 
 
+def make_lr_schedule_callback(
+    lr_schedule: str,
+    peak_lr: float,
+    total_epochs: int,
+    warmup_epochs: int = 10,
+    patience_lr_reduce: int = 5,
+    monitor: str = "val_loss",
+) -> "keras.callbacks.Callback":
+    """Return the appropriate LR schedule callback.
+
+    Args:
+        lr_schedule: "cosine_warmup" or "reduce_on_plateau".
+        peak_lr: Peak learning rate (the value set in the optimizer).
+        total_epochs: Total training epochs (used for cosine end point).
+        warmup_epochs: Number of linear warm-up epochs before cosine decay.
+        patience_lr_reduce: Patience for ReduceLROnPlateau (ignored for cosine_warmup).
+        monitor: Metric to monitor (for ReduceLROnPlateau only).
+
+    "cosine_warmup" schedule:
+        epoch 0 → warmup_epochs:  linear ramp from 1e-6 → peak_lr
+        epoch warmup_epochs → end: cosine decay back to 1e-6
+    This prevents the optimizer from overshooting good loss basins on the
+    first few epochs (the root cause of runs converging to RMSE ~20 at epoch 4).
+    """
+    import math
+
+    if lr_schedule == "cosine_warmup":
+        min_lr = 1e-6
+
+        def schedule(epoch: int, lr: float) -> float:
+            if epoch < warmup_epochs:
+                return min_lr + (peak_lr - min_lr) * epoch / max(1, warmup_epochs)
+            progress = (epoch - warmup_epochs) / max(1, total_epochs - warmup_epochs)
+            return min_lr + 0.5 * (peak_lr - min_lr) * (1 + math.cos(math.pi * progress))
+
+        return keras.callbacks.LearningRateScheduler(schedule, verbose=0)
+
+    # Default: plateau-based reduction (original behaviour)
+    return keras.callbacks.ReduceLROnPlateau(
+        monitor=monitor,
+        factor=0.5,
+        patience=patience_lr_reduce,
+        min_lr=1e-7,
+        verbose=1,
+    )
+
+
 def normalize_data(
     X_train: np.ndarray,
     X_val: Optional[np.ndarray] = None,
@@ -700,16 +747,18 @@ def train_model(
         "units": 64,
         "dense_units": 32,
         "dropout_rate": 0.2,
-        "learning_rate": 0.001,
+        "learning_rate": 3e-4,
         "batch_size": 32,
-        "epochs": 50,
+        "epochs": 200,
         "max_sequence_length": None,
         "loss_name": "asymmetric_mse",
         "loss_alpha": 2.0,
         "rul_clip_value": None,
         "target_scaling": "none",
-        "gradient_clipnorm": None,
+        "gradient_clipnorm": 1.0,
         "gradient_clipvalue": None,
+        "lr_schedule": "cosine_warmup",
+        "warmup_epochs": 10,
         "validation_split": 0.2,
         "patience_early_stop": 10,
         "patience_lr_reduce": 5,
@@ -844,20 +893,22 @@ def train_model(
     validation_data = (X_val, y_val_fit) if X_val is not None and y_val_fit is not None else None
 
     # Callbacks
+    monitor = "val_loss" if validation_data else "loss"
     callbacks = [
         WandbCallback(
-            monitor="val_loss" if validation_data else "loss",
+            monitor=monitor,
             log_weights=False,
             log_gradients=False,
             save_model=False,
             save_graph=False,
         ),
-        keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss" if validation_data else "loss",
-            factor=0.5,
-            patience=config["patience_lr_reduce"],
-            min_lr=1e-7,
-            verbose=1,
+        make_lr_schedule_callback(
+            lr_schedule=config.get("lr_schedule", "cosine_warmup"),
+            peak_lr=config["learning_rate"],
+            total_epochs=config["epochs"],
+            warmup_epochs=config.get("warmup_epochs", 10),
+            patience_lr_reduce=config["patience_lr_reduce"],
+            monitor=monitor,
         ),
     ]
     if use_early_stop:
@@ -1518,8 +1569,23 @@ Examples:
     parser.add_argument(
         "--gradient-clipnorm",
         type=float,
-        default=None,
-        help="Optional Adam clipnorm for training stability",
+        default=1.0,
+        help="Adam gradient clipnorm (default: 1.0 — on by default for stability)",
+    )
+    parser.add_argument(
+        "--lr-schedule",
+        type=str,
+        default="cosine_warmup",
+        choices=["cosine_warmup", "reduce_on_plateau"],
+        help="LR schedule: cosine_warmup (default) or reduce_on_plateau (legacy). "
+             "cosine_warmup linearly ramps LR from 1e-6 to peak over --warmup-epochs, "
+             "then cosine-decays to 1e-6, preventing bad early convergence.",
+    )
+    parser.add_argument(
+        "--warmup-epochs",
+        type=int,
+        default=10,
+        help="Number of linear warm-up epochs before cosine decay (default: 10)",
     )
     parser.add_argument(
         "--gradient-clipvalue",
@@ -1729,6 +1795,8 @@ Examples:
             "patience_lr_reduce", args.patience_lr_reduce
         ),
         "use_early_stop": json_training_config.get("use_early_stop", not args.no_early_stop),
+        "lr_schedule": json_training_config.get("lr_schedule", args.lr_schedule),
+        "warmup_epochs": json_training_config.get("warmup_epochs", args.warmup_epochs),
     }
 
     # Compare mode

@@ -58,7 +58,7 @@ N-CMAPSS-Engine-Prediction
 | `python scripts/compare_saved_runs.py` | Build a comparison plot from saved runs (no retraining) |
 | `python scripts/make_best_model_summary.py` | Create a single summary image for the best model |
 
-All commands accept `--fd 1..7` to switch datasets. Feature normalization and visual outputs can be toggled with `--no-normalize` / `--no-visualize` during training.
+All commands accept `--fd 1..7` to switch datasets. Visual outputs can be suppressed with `--no-visualize`. Pass `--normalize` to apply an extra StandardScaler on top of NCmapssReader's built-in min-max scaling (not recommended — double normalization).
 
 If you only remember one thing: run `python train_model.py --model lstm` to bootstrap everything. From there you can branch into comparisons, more advanced architectures, or the visualization suite without relearning new entry points.
 

@@ -79,7 +79,7 @@ scripts/                       # Ad-hoc comparison & summary tools
 
 ### Data Pipeline
 
-`get_datasets(fd=1)` returns `((dev_X, dev_y), (val_X, val_y), (test_X, test_y))`. Each X is `List[np.ndarray]` with shape `(num_cycles, timesteps, num_sensors)`. `prepare_sequences()` in `train_model.py:68` flattens into `(N, timesteps, features)` arrays. `normalize_data()` at `train_model.py:100` fits `StandardScaler` on train, transforms all splits. See [src/data/CLAUDE.md](src/data/CLAUDE.md).
+`get_datasets(fd=1)` returns `((dev_X, dev_y), (val_X, val_y), (test_X, test_y))`. Each X is `List[np.ndarray]` with shape `(num_cycles, timesteps, num_sensors)`. Data is already min-max scaled to `[0, 1]` by `NCmapssReader` (fitted on dev only). `prepare_sequences()` in `train_model.py` flattens into `(N, timesteps, features)` arrays. An optional second `StandardScaler` pass is available via `--normalize` but is off by default (double normalization). See [src/data/CLAUDE.md](src/data/CLAUDE.md).
 
 ### Training Pipeline
 
