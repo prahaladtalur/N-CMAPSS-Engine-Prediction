@@ -212,6 +212,36 @@ class TestOperatingConditionResidualizer:
         assert np.allclose(transformed[..., 4], 0.0, atol=1e-5)
         assert np.allclose(transformed[..., :4], operating)
 
+    def test_residualizer_models_time_position_within_cycle(self):
+        operating = np.ones((2, 3, 4), dtype=np.float32)
+        time_position = np.linspace(0.0, 1.0, num=3, dtype=np.float32)
+        sensor = np.broadcast_to(5.0 * time_position[None, :] + 2.0, (2, 3))
+        unit = np.concatenate([operating, sensor[..., np.newaxis]], axis=-1)
+
+        residualizer = self.OperatingConditionResidualizer().fit([unit])
+        transformed = residualizer.transform(unit)
+
+        assert np.allclose(transformed[..., 4], 0.0, atol=1e-5)
+
+    def test_residualizer_fits_only_healthy_cycles_when_labels_provided(self):
+        operating = np.ones((2, 3, 4), dtype=np.float32)
+        healthy_sensor = np.full((3,), 10.0, dtype=np.float32)
+        degraded_sensor = np.full((3,), 25.0, dtype=np.float32)
+        unit = np.concatenate(
+            [
+                operating,
+                np.stack([healthy_sensor, degraded_sensor], axis=0)[..., np.newaxis],
+            ],
+            axis=-1,
+        )
+        labels = [np.array([65.0, 10.0], dtype=np.float32)]
+
+        residualizer = self.OperatingConditionResidualizer().fit([unit], labels=labels)
+        transformed = residualizer.transform(unit)
+
+        assert np.allclose(transformed[0, ..., 4], 0.0, atol=1e-5)
+        assert np.allclose(transformed[1, ..., 4], 15.0, atol=1e-5)
+
 
 class TestJsonSafety:
     """Test JSON-safe serialization helpers used by training outputs."""
@@ -225,9 +255,7 @@ class TestJsonSafety:
     def test_make_json_safe_converts_nested_numpy_scalars(self, tmp_path):
         payload = {
             "metrics_mean": {"rmse_normalized": np.float32(0.1107)},
-            "per_seed": {
-                "42": {"rmse_normalized": np.float32(0.1124), "best_epoch": np.int64(13)}
-            },
+            "per_seed": {"42": {"rmse_normalized": np.float32(0.1124), "best_epoch": np.int64(13)}},
         }
 
         safe_payload = self.make_json_safe(payload)

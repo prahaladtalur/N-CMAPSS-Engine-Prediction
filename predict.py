@@ -129,7 +129,9 @@ class RULPredictor:
 
     def _load_model_spec(self, model_path: str) -> Dict[str, Any]:
         model_dir = str(Path(model_path).parent)
-        model = tf.keras.models.load_model(model_path, custom_objects={"loss": self._asymmetric_mse()})
+        model = tf.keras.models.load_model(
+            model_path, custom_objects={"loss": self._asymmetric_mse()}
+        )
 
         config_path = os.path.join(model_dir, "config.json")
         config = self._load_json_or_default(config_path, {"max_sequence_length": 1000})
@@ -256,7 +258,9 @@ class RULPredictor:
             "prediction": final_pred,
             "individual_predictions": individual_preds,
             "std_dev": np.std(predictions) if len(predictions) > 1 else 0.0,
-            "confidence": self._calculate_confidence(predictions) if len(predictions) > 1 else "N/A",
+            "confidence": (
+                self._calculate_confidence(predictions) if len(predictions) > 1 else "N/A"
+            ),
         }
 
     def _calculate_confidence(self, predictions: List[float]) -> str:
@@ -316,7 +320,12 @@ class RULPredictor:
         """
         print(f"\nLoading N-CMAPSS FD{fd} test set...")
         feature_select = PHYSICAL_CHANNELS if self.config.get("drop_virtual") else None
-        _, _, (test_X, test_y) = get_datasets(fd=fd, feature_select=feature_select)
+        resolution_seconds = int(self.config.get("resolution_seconds", 1))
+        _, _, (test_X, test_y) = get_datasets(
+            fd=fd,
+            feature_select=feature_select,
+            resolution_seconds=resolution_seconds,
+        )
 
         all_true, all_pred = [], []
         for unit_id in range(len(test_X)):
@@ -429,7 +438,12 @@ Examples:
     elif args.unit_id is not None:
         print(f"\nLoading N-CMAPSS FD{args.fd} test set...")
         feature_select = PHYSICAL_CHANNELS if predictor.config.get("drop_virtual") else None
-        _, _, (test_X, test_y) = get_datasets(fd=args.fd, feature_select=feature_select)
+        resolution_seconds = int(predictor.config.get("resolution_seconds", 1))
+        _, _, (test_X, test_y) = get_datasets(
+            fd=args.fd,
+            feature_select=feature_select,
+            resolution_seconds=resolution_seconds,
+        )
 
         if args.unit_id >= len(test_X):
             print(f"❌ Unit ID {args.unit_id} out of range (max: {len(test_X)-1})")

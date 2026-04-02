@@ -17,8 +17,13 @@ def asymmetric_mse(alpha: float = 2.0):
     return loss
 
 
-def multi_zone_mse(early_alpha: float = 2.0, near_alpha: float = 3.5, critical_alpha: float = 6.0,
-                   near_threshold: float = 40.0, critical_threshold: float = 20.0):
+def multi_zone_mse(
+    early_alpha: float = 2.0,
+    near_alpha: float = 3.5,
+    critical_alpha: float = 6.0,
+    near_threshold: float = 40.0,
+    critical_threshold: float = 20.0,
+):
     """Zone-aware asymmetric loss that penalises over-prediction more heavily as RUL approaches zero.
 
     Three zones (tuned for N-CMAPSS max_rul=65):
@@ -71,6 +76,7 @@ def compile_model_for_training(
     learning_rate: float,
     loss_name: str = "asymmetric_mse",
     loss_alpha: float = 2.0,
+    weight_decay: float = 0.0,
     gradient_clipnorm: Optional[float] = None,
     gradient_clipvalue: Optional[float] = None,
 ) -> keras.Model:
@@ -81,7 +87,10 @@ def compile_model_for_training(
     if gradient_clipvalue is not None:
         optimizer_kwargs["clipvalue"] = gradient_clipvalue
 
-    optimizer = keras.optimizers.Adam(**optimizer_kwargs)
+    if weight_decay and weight_decay > 0.0:
+        optimizer = keras.optimizers.AdamW(weight_decay=weight_decay, **optimizer_kwargs)
+    else:
+        optimizer = keras.optimizers.Adam(**optimizer_kwargs)
     model.compile(
         optimizer=optimizer,
         loss=get_loss_function(loss_name=loss_name, loss_alpha=loss_alpha),

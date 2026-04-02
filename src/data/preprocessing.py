@@ -12,48 +12,102 @@ from src.data.load_data import W_CHANNELS
 
 
 class OperatingConditionResidualizer:
-    """Remove sensor variation explained by the operating-condition channels."""
+    """Remove sensor variation explained by operating conditions and flight phase."""
 
-    def __init__(self, operating_condition_indices: Sequence[int] = W_CHANNELS):
+    def __init__(
+        self,
+        operating_condition_indices: Sequence[int] = W_CHANNELS,
+        *,
+        include_time_position: bool = True,
+        fit_healthy_only: bool = True,
+    ):
         self.operating_condition_indices = tuple(int(idx) for idx in operating_condition_indices)
+        self.include_time_position = bool(include_time_position)
+        self.fit_healthy_only = bool(fit_healthy_only)
         self.target_indices_: list[int] = []
         self.coefficients_: Optional[np.ndarray] = None
+        self.healthy_rul_threshold_: Optional[float] = None
 
-    def fit(self, units: Sequence[np.ndarray]) -> "OperatingConditionResidualizer":
-        """Fit a linear sensor baseline using dev-split operating conditions only."""
+    def _build_design(self, values: np.ndarray) -> np.ndarray:
+        operating = values[..., list(self.operating_condition_indices)]
+        operating_flat = operating.reshape(-1, len(self.operating_condition_indices)).astype(
+            np.float32
+        )
+        design_terms = [operating_flat]
+
+        if self.include_time_position:
+            if values.ndim == 2:
+                time_position = np.linspace(0.0, 1.0, num=values.shape[0], dtype=np.float32)[
+                    :, None
+                ]
+            else:
+                time_axis = np.linspace(0.0, 1.0, num=values.shape[1], dtype=np.float32)
+                time_position = np.broadcast_to(time_axis, values.shape[:-1]).reshape(-1, 1)
+            design_terms.append(time_position)
+
+        design_terms.append(np.ones((operating_flat.shape[0], 1), dtype=np.float32))
+        return np.concatenate(design_terms, axis=1)
+
+    def fit(
+        self,
+        units: Sequence[np.ndarray],
+        labels: Optional[Sequence[np.ndarray]] = None,
+        healthy_rul_threshold: Optional[float] = None,
+    ) -> "OperatingConditionResidualizer":
+        """Fit a dev-split baseline using operating conditions from mostly healthy cycles."""
         if not units:
             raise ValueError("Cannot fit OperatingConditionResidualizer on an empty split")
+        if labels is not None and len(labels) != len(units):
+            raise ValueError("labels must have the same number of units as features")
 
         num_features = int(units[0].shape[-1])
         operating_index_set = set(self.operating_condition_indices)
-        self.target_indices_ = [idx for idx in range(num_features) if idx not in operating_index_set]
+        self.target_indices_ = [
+            idx for idx in range(num_features) if idx not in operating_index_set
+        ]
         if not self.target_indices_:
-            self.coefficients_ = np.zeros((len(self.operating_condition_indices) + 1, 0), dtype=np.float32)
+            design_width = (
+                len(self.operating_condition_indices) + 1 + int(self.include_time_position)
+            )
+            self.coefficients_ = np.zeros((design_width, 0), dtype=np.float32)
             return self
 
+        fit_units = list(units)
+        if labels is not None and self.fit_healthy_only:
+            threshold = healthy_rul_threshold
+            if threshold is None:
+                threshold = float(max(np.max(unit_labels) for unit_labels in labels))
+            self.healthy_rul_threshold_ = float(threshold)
+
+            healthy_units = []
+            for unit, unit_labels in zip(units, labels):
+                healthy_mask = np.asarray(unit_labels) >= threshold
+                if np.any(healthy_mask):
+                    healthy_units.append(np.asarray(unit)[healthy_mask])
+            if healthy_units:
+                fit_units = healthy_units
+
         operating_stack = np.concatenate(
-            [
-                unit[..., list(self.operating_condition_indices)].reshape(
-                    -1, len(self.operating_condition_indices)
-                )
-                for unit in units
-            ],
+            [self._build_design(np.asarray(unit, dtype=np.float32)) for unit in fit_units],
             axis=0,
         )
         target_stack = np.concatenate(
-            [unit[..., self.target_indices_].reshape(-1, len(self.target_indices_)) for unit in units],
+            [
+                np.asarray(unit, dtype=np.float32)[..., self.target_indices_].reshape(
+                    -1, len(self.target_indices_)
+                )
+                for unit in fit_units
+            ],
             axis=0,
         )
-        design = np.concatenate(
-            [operating_stack.astype(np.float32), np.ones((operating_stack.shape[0], 1), dtype=np.float32)],
-            axis=1,
+        coefficients, _, _, _ = np.linalg.lstsq(
+            operating_stack, target_stack.astype(np.float32), rcond=None
         )
-        coefficients, _, _, _ = np.linalg.lstsq(design, target_stack.astype(np.float32), rcond=None)
         self.coefficients_ = coefficients.astype(np.float32)
         return self
 
     def transform(self, values: np.ndarray) -> np.ndarray:
-        """Replace non-W channels with residuals against the fitted operating baseline."""
+        """Replace non-W channels with residuals against the fitted baseline."""
         if self.coefficients_ is None:
             raise ValueError("OperatingConditionResidualizer must be fitted before transform()")
 
@@ -65,12 +119,7 @@ class OperatingConditionResidualizer:
         if not self.target_indices_:
             return transformed
 
-        operating = transformed[..., list(self.operating_condition_indices)]
-        operating_flat = operating.reshape(-1, len(self.operating_condition_indices))
-        design = np.concatenate(
-            [operating_flat, np.ones((operating_flat.shape[0], 1), dtype=np.float32)],
-            axis=1,
-        )
+        design = self._build_design(transformed)
         baseline = design @ self.coefficients_
         transformed[..., self.target_indices_] -= baseline.reshape(
             transformed.shape[:-1] + (len(self.target_indices_),)

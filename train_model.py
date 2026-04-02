@@ -531,6 +531,8 @@ def save_model_checkpoint(
             "epochs": config.get("epochs"),
             "batch_size": config.get("batch_size"),
             "learning_rate": config.get("learning_rate"),
+            "weight_decay": config.get("weight_decay"),
+            "resolution_seconds": config.get("resolution_seconds"),
             "max_sequence_length": config.get("max_sequence_length"),
             "loss_name": config.get("loss_name"),
             "loss_alpha": config.get("loss_alpha"),
@@ -877,9 +879,11 @@ def train_model(
         "rul_clip_value": None,
         "target_scaling": "minmax",
         "operating_condition_residuals": False,
+        "resolution_seconds": 1,
         "prediction_aggregation": "none",
         "aggregation_window": 100,
         "aggregation_decay": 0.9,
+        "weight_decay": 0.0,
         "gradient_clipnorm": 1.0,
         "gradient_clipvalue": None,
         "lr_schedule": "cosine_warmup",
@@ -923,7 +927,7 @@ def train_model(
     residualizer = None
     if config["operating_condition_residuals"]:
         print("Fitting operating-condition residualizer on dev split...")
-        residualizer = OperatingConditionResidualizer().fit(dev_X)
+        residualizer = OperatingConditionResidualizer().fit(dev_X, labels=dev_y)
         dev_X = [residualizer.transform(unit) for unit in dev_X]
         if val_X is not None:
             val_X = [residualizer.transform(unit) for unit in val_X]
@@ -1019,6 +1023,7 @@ def train_model(
         learning_rate=config["learning_rate"],
         loss_name=config["loss_name"],
         loss_alpha=config["loss_alpha"],
+        weight_decay=config["weight_decay"],
         gradient_clipnorm=config["gradient_clipnorm"],
         gradient_clipvalue=config["gradient_clipvalue"],
     )
@@ -1235,11 +1240,13 @@ def train_model(
         "training/final_train_loss": float(history.history["loss"][-1]),
         "training/batch_size": int(config["batch_size"]),
         "training/learning_rate": float(config["learning_rate"]),
+        "training/weight_decay": float(config["weight_decay"]),
         "training/loss_name": config["loss_name"],
         "training/loss_alpha": float(config["loss_alpha"]),
         "training/target_scaling": config["target_scaling"],
         "training/rul_clip_value": config["rul_clip_value"],
         "training/operating_condition_residuals": bool(config["operating_condition_residuals"]),
+        "training/resolution_seconds": int(config["resolution_seconds"]),
         "training/prediction_aggregation": config["prediction_aggregation"],
         "training/aggregation_window": config["aggregation_window"],
         "training/aggregation_decay": float(config["aggregation_decay"]),
@@ -1751,6 +1758,13 @@ Examples:
         "using validation/test information.",
     )
     parser.add_argument(
+        "--resolution-seconds",
+        type=int,
+        default=1,
+        help="Average over this many consecutive seconds before windowing each "
+        "flight cycle (default: 1). Papers often use 10-second resolution.",
+    )
+    parser.add_argument(
         "--prediction-aggregation",
         type=str,
         default="none",
@@ -1775,6 +1789,12 @@ Examples:
         type=float,
         default=1.0,
         help="Adam gradient clipnorm (default: 1.0 — on by default for stability)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.0,
+        help="AdamW weight decay (default: 0.0). Paper-style recipes often use 1e-3.",
     )
     parser.add_argument(
         "--lr-schedule",
@@ -1848,6 +1868,13 @@ Examples:
         help="Drop the 14 virtual sensor channels (X_v, channels 18-31), keeping only "
         "operating conditions (W) and physical sensors (X_s) — 18 features instead of 32. "
         "Literature reports 16-47%% RMSE reduction from this change.",
+    )
+    parser.add_argument(
+        "--paper-aligned",
+        action="store_true",
+        help="Enable a paper-style preprocessing recipe: drop virtual sensors, "
+        "fit healthy-cycle operating-condition residuals, use 10-second reader "
+        "resolution, and set AdamW weight decay to 1e-3 unless explicitly overridden.",
     )
     parser.add_argument(
         "--no-visualize",
@@ -1963,6 +1990,18 @@ Examples:
     else:
         json_training_config = {}
 
+    if args.paper_aligned:
+        args.drop_virtual = True
+        args.operating_condition_residuals = True
+        if args.resolution_seconds == 1:
+            args.resolution_seconds = 10
+        if args.weight_decay == 0.0:
+            args.weight_decay = 1e-3
+
+    if args.resolution_seconds < 1:
+        print("Error: --resolution-seconds must be >= 1")
+        sys.exit(1)
+
     # Validate arguments
     if not args.compare and not args.compare_all and not args.model:
         parser.print_help()
@@ -1970,10 +2009,16 @@ Examples:
         sys.exit(1)
 
     # Load data
+    resolution_seconds = json_training_config.get("resolution_seconds", args.resolution_seconds)
+    if resolution_seconds < 1:
+        print("Error: resolution_seconds must be >= 1")
+        sys.exit(1)
     feature_select = PHYSICAL_CHANNELS if args.drop_virtual else None
     print(f"\nLoading N-CMAPSS FD{args.fd} dataset...")
     (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(
-        fd=args.fd, feature_select=feature_select
+        fd=args.fd,
+        feature_select=feature_select,
+        resolution_seconds=resolution_seconds,
     )
     val_X, val_y = val_pair if val_pair else (None, None)
 
@@ -1996,6 +2041,7 @@ Examples:
             "operating_condition_residuals",
             args.operating_condition_residuals,
         ),
+        "resolution_seconds": resolution_seconds,
         "prediction_aggregation": json_training_config.get(
             "prediction_aggregation",
             args.prediction_aggregation,
@@ -2004,6 +2050,7 @@ Examples:
             "aggregation_window", args.aggregation_window
         ),
         "aggregation_decay": json_training_config.get("aggregation_decay", args.aggregation_decay),
+        "weight_decay": json_training_config.get("weight_decay", args.weight_decay),
         "gradient_clipnorm": json_training_config.get("gradient_clipnorm", args.gradient_clipnorm),
         "gradient_clipvalue": json_training_config.get(
             "gradient_clipvalue", args.gradient_clipvalue
