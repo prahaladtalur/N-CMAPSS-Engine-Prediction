@@ -135,6 +135,6 @@ def build_ttsnet_model(
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss=asymmetric_mse(),
-        metrics=["mae", "mape"],
+        metrics=[keras.metrics.RootMeanSquaredError(name="rmse"), "mae", "mape"],
     )
     return model

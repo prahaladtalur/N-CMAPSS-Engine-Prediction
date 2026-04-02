@@ -16,6 +16,7 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
 class ChannelAttention(layers.Layer):
     """
     Channel Attention mechanism (SENet-style).
@@ -59,6 +60,7 @@ class ChannelAttention(layers.Layer):
         return config
 
 
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
 class SpatialAttention(layers.Layer):
     """
     Spatial Attention mechanism.
@@ -99,6 +101,7 @@ class SpatialAttention(layers.Layer):
         return config
 
 
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
 class MDFAModule(layers.Layer):
     """
     Multi-Scale Dilated Fusion Attention (MDFA) module.

@@ -64,12 +64,14 @@ class TestModelRegistry:
             "cnn_gru",
             "inception_lstm",
             "mdfa",
+            "mdfa_paper",
             "cnn_lstm_attention",
             "cata_tcn",
             "ttsnet",
             "atcn",
             "sparse_transformer_bigrcu",
             "mstcn",
+            "sa_mstcn_gfa",
         }
         assert expected.issubset(registered), f"Missing models: {expected - registered}"
 
@@ -126,6 +128,10 @@ class TestAllModelsSmoke:
     def test_has_mae_metric(self, model_name):
         model = _build(model_name)
         assert_model_tracks_metric(model, "mae")
+
+    def test_has_rmse_metric(self, model_name):
+        model = _build(model_name)
+        assert_model_tracks_metric(model, "rmse")
 
     def test_forward_pass_finite(self, model_name):
         """One forward pass should produce finite predictions."""

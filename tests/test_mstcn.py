@@ -9,7 +9,13 @@ import pytest
 import tensorflow as tf
 from tensorflow import keras
 
-from src.models.mstcn import build_mstcn_model, GlobalFusionAttention, asymmetric_mse
+from src.models.mstcn import (
+    build_mstcn_model,
+    build_sa_mstcn_gfa_model,
+    GlobalFusionAttention,
+    SequenceSelfAttention,
+    asymmetric_mse,
+)
 from src.models.architectures import ModelRegistry
 from tests.model_assertions import assert_model_tracks_metric
 
@@ -74,6 +80,37 @@ class TestMSTCNModel:
         model = ModelRegistry.build("mstcn", input_shape=(1000, 32))
         assert model is not None
         assert model.name == "mstcn"
+
+
+class TestSAMSTCNGFAModel:
+    """Test the paper-shaped SA-MSTCN-GFA model."""
+
+    def test_sa_mstcn_gfa_builds_successfully(self):
+        model = build_sa_mstcn_gfa_model(input_shape=(1000, 32))
+        assert model is not None
+        assert isinstance(model, keras.Model)
+
+    def test_sa_mstcn_gfa_input_output_shapes(self):
+        model = build_sa_mstcn_gfa_model(input_shape=(250, 16))
+        assert model.input_shape == (None, 250, 16)
+        assert model.output_shape == (None, 1)
+
+    def test_sa_mstcn_gfa_registry_integration(self):
+        assert "sa_mstcn_gfa" in ModelRegistry.list_models()
+        model = ModelRegistry.build("sa_mstcn_gfa", input_shape=(200, 12))
+        assert model is not None
+        assert model.name == "sa_mstcn_gfa"
+
+    def test_sa_mstcn_gfa_has_head_self_attention(self):
+        model = build_sa_mstcn_gfa_model(input_shape=(200, 12))
+        layer_types = [type(layer).__name__ for layer in model.layers]
+        assert "SequenceSelfAttention" in layer_types
+
+    def test_sequence_self_attention_preserves_shape(self):
+        layer = SequenceSelfAttention(num_heads=4, dropout_rate=0.1)
+        inputs = tf.random.normal((4, 50, 16))
+        outputs = layer(inputs, training=False)
+        assert outputs.shape == inputs.shape
 
 
 class TestGlobalFusionAttention:
@@ -258,6 +295,11 @@ class TestMSTCNArchitecture:
         params_many = model_many_scales.count_params()
 
         assert params_many > params_few
+
+    def test_sa_mstcn_gfa_has_three_branches_by_default(self):
+        model = build_sa_mstcn_gfa_model(input_shape=(100, 20))
+        branch_layers = [layer for layer in model.layers if "mstcn_branch" in layer.name]
+        assert len(branch_layers) == 6
 
 
 class TestMSTCNVsMDFA:

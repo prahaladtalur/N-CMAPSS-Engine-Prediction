@@ -19,6 +19,7 @@ def asymmetric_mse(alpha: float = 2.0):
     return loss
 
 
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
 class ResidualTCNBlock(layers.Layer):
     """Dilated residual TCN block with dropout."""
 
@@ -67,7 +68,20 @@ class ResidualTCNBlock(layers.Layer):
         residual = self.proj(inputs) if self.proj is not None else inputs
         return layers.add([x, residual])
 
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "filters": self.filters,
+                "kernel_size": self.kernel_size,
+                "dilation_rate": self.dilation_rate,
+                "dropout_rate": self.dropout_rate,
+            }
+        )
+        return config
 
+
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
 class ChannelAttention1D(layers.Layer):
     """Squeeze-excitation channel attention."""
 
@@ -89,7 +103,13 @@ class ChannelAttention1D(layers.Layer):
         weights = self.fc2(self.fc1(pooled))
         return inputs * tf.expand_dims(weights, axis=1)
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({"reduction_ratio": self.reduction_ratio})
+        return config
 
+
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
 class TemporalAttention1D(layers.Layer):
     """Temporal attention over timesteps."""
 
@@ -103,6 +123,11 @@ class TemporalAttention1D(layers.Layer):
         max_pool = tf.reduce_max(inputs, axis=-1, keepdims=True)
         temporal_map = self.conv(tf.concat([avg_pool, max_pool], axis=-1))
         return inputs * temporal_map
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"kernel_size": self.kernel_size})
+        return config
 
 
 def build_cata_tcn_model(
@@ -138,6 +163,6 @@ def build_cata_tcn_model(
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss=asymmetric_mse(),
-        metrics=["mae", "mape"],
+        metrics=[keras.metrics.RootMeanSquaredError(name="rmse"), "mae", "mape"],
     )
     return model

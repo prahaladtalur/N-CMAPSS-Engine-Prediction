@@ -1,4 +1,4 @@
-.PHONY: install install-dev lint format typecheck test check train clean help
+.PHONY: install install-dev lint format typecheck test check train list-runs list-runs-json clean help
 
 # Default target
 help:
@@ -11,6 +11,8 @@ help:
 	@echo "  make test         - Run unit tests with pytest"
 	@echo "  make check        - Run all checks (lint + typecheck + test)"
 	@echo "  make train        - Train default model (LSTM)"
+	@echo "  make list-runs    - Show local checkpoints and W&B runs"
+	@echo "  make list-runs-json - Emit the local run index as JSON"
 	@echo "  make clean        - Remove cache and build artifacts"
 
 # Installation
@@ -38,6 +40,12 @@ check: lint typecheck test
 # Training
 train:
 	python train_model.py --model lstm --epochs 30
+
+list-runs:
+	uv run python scripts/list_local_runs.py
+
+list-runs-json:
+	uv run python scripts/list_local_runs.py --json
 
 # Cleanup
 clean:

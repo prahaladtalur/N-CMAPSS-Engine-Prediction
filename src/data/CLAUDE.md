@@ -25,10 +25,11 @@ Downloads and prepares data via `NCmapssReader`. Called internally by `get_datas
 
 ## Data Flow in Training
 
-1. `get_datasets()` returns `List[ndarray]` per split
-2. `prepare_sequences()` in `train_model.py:68` flattens into single arrays: `(N, timesteps, features)` and `(N,)`
-3. `normalize_data()` in `train_model.py:100` fits `StandardScaler` on train, transforms all splits
-4. Model receives `(batch, timesteps, features)` tensors
+1. `get_datasets()` returns `List[ndarray]` per split — data already min-max scaled to `[0, 1]` by `NCmapssReader`
+2. `prepare_sequences()` in `train_model.py` flattens into single arrays: `(N, timesteps, features)` and `(N,)`
+3. Model receives `(batch, timesteps, features)` tensors
+
+Note: an additional `StandardScaler` pass (`normalize_data()`) is available via `--normalize` but is off by default — `NCmapssReader` already normalizes the data.
 
 See [../../CLAUDE.md](../../CLAUDE.md) for the full training pipeline overview.
 

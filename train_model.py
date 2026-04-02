@@ -59,7 +59,60 @@ try:
 except ImportError:
     pass  # dotenv is optional
 
-from src.data.load_data import get_datasets
+
+def _normalize_wandb_auth() -> None:
+    """Prefer a valid W&B API key and fall back to existing login state.
+
+    A stale/truncated key in `.env` overrides a working `~/.netrc` login and
+    makes `wandb.init()` fail. Treat obviously invalid keys as absent so wandb
+    can fall back to the user's persisted login state.
+    """
+    key = os.environ.get("WANDB_API_KEY")
+    if key and len(key.strip()) < 40:
+        print("Ignoring invalid WANDB_API_KEY from environment; falling back to stored W&B login.")
+        os.environ.pop("WANDB_API_KEY", None)
+
+
+def require_wandb() -> None:
+    """Validate that W&B is configured and fail fast if not.
+
+    Checks that WANDB_MODE is not 'disabled' and that either WANDB_API_KEY is
+    set or the user is already logged in (netrc / ~/.wandb/settings).
+    """
+    _normalize_wandb_auth()
+    mode = os.environ.get("WANDB_MODE", "").lower()
+    if mode == "disabled":
+        print(
+            "\n❌  W&B tracking is required but WANDB_MODE=disabled.\n"
+            "   Either unset WANDB_MODE or set it to 'online' / 'offline'.\n"
+            "   To configure W&B: wandb login"
+        )
+        sys.exit(1)
+
+    # In offline mode, no API key is needed — runs are saved locally
+    if mode == "offline":
+        return
+
+    # Online mode (default): need an API key
+    if os.environ.get("WANDB_API_KEY"):
+        return
+
+    # Check if logged in via netrc / wandb settings
+    if wandb.api.api_key:
+        return
+
+    print(
+        "\n❌  W&B tracking is required but no API key found.\n"
+        "   Fix with one of:\n"
+        "     1. Run: wandb login\n"
+        "     2. Set WANDB_API_KEY in .env or environment\n"
+        "     3. Set WANDB_MODE=offline for local-only tracking"
+    )
+    sys.exit(1)
+
+
+from src.data.load_data import get_datasets, PHYSICAL_CHANNELS
+from src.data.preprocessing import OperatingConditionResidualizer, transform_feature_array
 from src.models.architectures import (
     ModelRegistry,
     compile_model_for_training,
@@ -69,6 +122,7 @@ from src.models.architectures import (
     get_model_recommendations,
 )
 from src.utils.metrics import compute_all_metrics, format_metrics
+from src.utils.postprocessing import causal_exponential_moving_average
 from src.search import run_hparam_search
 
 # ============================================================================
@@ -109,6 +163,7 @@ def prepare_sequences(
     X: List[np.ndarray],
     y: List[np.ndarray],
     max_sequence_length: Optional[int] = None,
+    diff_features: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Prepare sequences from list of arrays for training.
@@ -117,6 +172,11 @@ def prepare_sequences(
         X: List of feature arrays (num_cycles, timesteps, num_sensors)
         y: List of label arrays (num_cycles,)
         max_sequence_length: Maximum sequence length (None for full sequences)
+        diff_features: If True, append cycle-to-cycle differential features.
+            For each cycle t, computes mean(cycle_t) - mean(cycle_{t-1}) and
+            broadcasts it across the time axis, doubling the feature count.
+            Cycle 0 uses zeros. Captures rate-of-change in sensor readings,
+            which is a direct degradation signal.
 
     Returns:
         Tuple of (X_sequences, y_sequences) as numpy arrays
@@ -126,15 +186,75 @@ def prepare_sequences(
 
     for unit_X, unit_y in zip(X, y):
         num_cycles = unit_X.shape[0]
+
+        # Pre-compute per-cycle means for differential features
+        if diff_features:
+            cycle_means = np.mean(unit_X, axis=1)  # (num_cycles, num_sensors)
+            prev_means = np.concatenate([cycle_means[:1] * 0, cycle_means[:-1]], axis=0)
+            cycle_deltas = cycle_means - prev_means  # (num_cycles, num_sensors)
+
         for cycle_idx in range(num_cycles):
             sequence = unit_X[cycle_idx]
             if max_sequence_length is not None:
-                # Take the last max_sequence_length timesteps
                 sequence = sequence[-max_sequence_length:]
+
+            if diff_features:
+                # Broadcast delta across the time axis and concatenate
+                delta = cycle_deltas[cycle_idx]  # (num_sensors,)
+                delta_broadcast = np.broadcast_to(delta, (sequence.shape[0], delta.shape[0]))
+                sequence = np.concatenate([sequence, delta_broadcast], axis=-1)
+
             X_sequences.append(sequence)
             y_sequences.append(unit_y[cycle_idx])
 
     return np.array(X_sequences), np.array(y_sequences)
+
+
+def make_lr_schedule_callback(
+    lr_schedule: str,
+    peak_lr: float,
+    total_epochs: int,
+    warmup_epochs: int = 10,
+    patience_lr_reduce: int = 5,
+    monitor: str = "val_loss",
+) -> "keras.callbacks.Callback":
+    """Return the appropriate LR schedule callback.
+
+    Args:
+        lr_schedule: "cosine_warmup" or "reduce_on_plateau".
+        peak_lr: Peak learning rate (the value set in the optimizer).
+        total_epochs: Total training epochs (used for cosine end point).
+        warmup_epochs: Number of linear warm-up epochs before cosine decay.
+        patience_lr_reduce: Patience for ReduceLROnPlateau (ignored for cosine_warmup).
+        monitor: Metric to monitor (for ReduceLROnPlateau only).
+
+    "cosine_warmup" schedule:
+        epoch 0 → warmup_epochs:  linear ramp from 1e-6 → peak_lr
+        epoch warmup_epochs → end: cosine decay back to 1e-6
+    This prevents the optimizer from overshooting good loss basins on the
+    first few epochs (the root cause of runs converging to RMSE ~20 at epoch 4).
+    """
+    import math
+
+    if lr_schedule == "cosine_warmup":
+        min_lr = 1e-6
+
+        def schedule(epoch: int, lr: float) -> float:
+            if epoch < warmup_epochs:
+                return min_lr + (peak_lr - min_lr) * epoch / max(1, warmup_epochs)
+            progress = (epoch - warmup_epochs) / max(1, total_epochs - warmup_epochs)
+            return min_lr + 0.5 * (peak_lr - min_lr) * (1 + math.cos(math.pi * progress))
+
+        return keras.callbacks.LearningRateScheduler(schedule, verbose=0)
+
+    # Default: plateau-based reduction (original behaviour)
+    return keras.callbacks.ReduceLROnPlateau(
+        monitor=monitor,
+        factor=0.5,
+        patience=patience_lr_reduce,
+        min_lr=1e-7,
+        verbose=1,
+    )
 
 
 def normalize_data(
@@ -241,9 +361,57 @@ def inverse_transform_targets(y: np.ndarray, metadata: Dict[str, Any]) -> np.nda
     return values * (scale_max - scale_min) + scale_min
 
 
+def evaluate_model_on_units(
+    model: keras.Model,
+    unit_X_list: List[np.ndarray],
+    unit_y_list: List[np.ndarray],
+    *,
+    max_sequence_length: Optional[int],
+    diff_features: bool,
+    scaler: Optional[StandardScaler],
+    residualizer: Optional[OperatingConditionResidualizer],
+    target_transform: Dict[str, Any],
+    rul_clip_value: Optional[float],
+    aggregation: str = "none",
+    aggregation_window: Optional[int] = None,
+    aggregation_decay: float = 0.9,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Run evaluation unit-by-unit so any temporal aggregation remains causal."""
+    y_true_all: List[np.ndarray] = []
+    y_pred_all: List[np.ndarray] = []
+
+    for unit_X, unit_y in zip(unit_X_list, unit_y_list):
+        transformed_unit = transform_feature_array(unit_X, residualizer=residualizer)
+        X_unit, _ = prepare_sequences(
+            [transformed_unit],
+            [unit_y],
+            max_sequence_length=max_sequence_length,
+            diff_features=diff_features,
+        )
+        X_unit = transform_feature_array(X_unit, scaler=scaler)
+        y_pred_fit = model.predict(X_unit, verbose=0).flatten()
+        y_pred = inverse_transform_targets(y_pred_fit, target_transform)
+
+        if aggregation == "ema":
+            y_pred = causal_exponential_moving_average(
+                y_pred,
+                decay=aggregation_decay,
+                window=aggregation_window,
+            )
+
+        y_true_all.append(clip_rul_targets(unit_y, rul_clip_value))
+        y_pred_all.append(y_pred.astype(np.float32))
+
+    if not y_true_all:
+        return np.array([], dtype=np.float32), np.array([], dtype=np.float32)
+
+    return np.concatenate(y_true_all), np.concatenate(y_pred_all)
+
+
 def save_model_checkpoint(
     model: keras.Model,
     scaler: Optional[StandardScaler],
+    residualizer: Optional[OperatingConditionResidualizer],
     config: Dict[str, Any],
     test_metrics: Dict[str, float],
     model_name: str,
@@ -291,6 +459,12 @@ def save_model_checkpoint(
             pickle.dump(scaler, f)
         print(f"✓ Scaler saved: {scaler_path.name}")
 
+    if residualizer is not None:
+        residualizer_path = model_dir / "residualizer.pkl"
+        with open(residualizer_path, "wb") as f:
+            pickle.dump(residualizer, f)
+        print(f"✓ Residualizer saved: {residualizer_path.name}")
+
     # 3. Save RUL normalization parameters
     rul_scaler_path = model_dir / "rul_scaler.json"
     with open(rul_scaler_path, "w") as f:
@@ -298,10 +472,18 @@ def save_model_checkpoint(
             {
                 "y_min": float(y_min),
                 "y_max": float(y_max),
-                "clip_value": None if target_transform is None else target_transform.get("clip_value"),
-                "target_scaling": None if target_transform is None else target_transform.get("scaling"),
-                "scale_min": None if target_transform is None else target_transform.get("scale_min"),
-                "scale_max": None if target_transform is None else target_transform.get("scale_max"),
+                "clip_value": (
+                    None if target_transform is None else target_transform.get("clip_value")
+                ),
+                "target_scaling": (
+                    None if target_transform is None else target_transform.get("scaling")
+                ),
+                "scale_min": (
+                    None if target_transform is None else target_transform.get("scale_min")
+                ),
+                "scale_max": (
+                    None if target_transform is None else target_transform.get("scale_max")
+                ),
             },
             f,
             indent=2,
@@ -349,6 +531,8 @@ def save_model_checkpoint(
             "epochs": config.get("epochs"),
             "batch_size": config.get("batch_size"),
             "learning_rate": config.get("learning_rate"),
+            "weight_decay": config.get("weight_decay"),
+            "resolution_seconds": config.get("resolution_seconds"),
             "max_sequence_length": config.get("max_sequence_length"),
             "loss_name": config.get("loss_name"),
             "loss_alpha": config.get("loss_alpha"),
@@ -358,6 +542,7 @@ def save_model_checkpoint(
         "files": {
             "model": "model.keras",
             "scaler": "scaler.pkl" if scaler is not None else None,
+            "residualizer": "residualizer.pkl" if residualizer is not None else None,
             "config": "config.json",
             "metrics": "metrics.json",
             "rul_scaler": "rul_scaler.json",
@@ -419,6 +604,7 @@ python predict.py --model-path {model_path} --input-file your_data.npy
 
 - `model.keras` - Trained Keras model
 - `scaler.pkl` - Feature normalization scaler
+- `residualizer.pkl` - Operating-condition residual preprocessor
 - `config.json` - Training configuration
 - `metrics.json` - Test set evaluation metrics
 - `rul_scaler.json` - RUL normalization parameters
@@ -457,6 +643,190 @@ def make_json_safe(value):
     return value
 
 
+def build_final_training_metrics(history: Dict[str, List[float]]) -> Dict[str, float]:
+    """Extract the last logged training metrics from a Keras history dict."""
+    final_metrics = {
+        "epochs_trained": int(len(history["loss"])),
+        "final_train_loss": float(history["loss"][-1]),
+    }
+
+    for metric_name in ("rmse", "mae", "mape"):
+        if metric_name in history:
+            final_metrics[f"final_train_{metric_name}"] = float(history[metric_name][-1])
+
+    for metric_name in ("val_loss", "val_rmse", "val_mae", "val_mape"):
+        if metric_name in history:
+            final_metrics[f"final_{metric_name}"] = float(history[metric_name][-1])
+
+    return final_metrics
+
+
+def build_best_epoch_summary(history: Dict[str, List[float]]) -> Dict[str, Any]:
+    """Summarize the best epoch based on validation loss when available."""
+    monitor = "val_loss" if "val_loss" in history else "loss"
+    best_epoch_idx = int(np.argmin(history[monitor]))
+    summary = {
+        "training/best_epoch": best_epoch_idx + 1,
+        "training/best_monitor_name": monitor,
+        "training/best_monitor_value": float(history[monitor][best_epoch_idx]),
+    }
+
+    for metric_name in (
+        "loss",
+        "rmse",
+        "mae",
+        "mape",
+        "val_loss",
+        "val_rmse",
+        "val_mae",
+        "val_mape",
+    ):
+        if metric_name in history:
+            summary[f"training/best_{metric_name}"] = float(history[metric_name][best_epoch_idx])
+
+    return summary
+
+
+def _describe_split(
+    X_split: Optional[List[np.ndarray]],
+    y_split: Optional[List[np.ndarray]],
+) -> Optional[Dict[str, Any]]:
+    """Build lightweight metadata for a dataset split without serializing raw arrays."""
+    if X_split is None or y_split is None:
+        return None
+
+    if isinstance(X_split, np.ndarray):
+        unit_count = int(X_split.shape[0])
+        cycle_count = int(X_split.shape[0])
+        timesteps = int(X_split.shape[1]) if X_split.ndim >= 2 else 0
+        num_features = int(X_split.shape[2]) if X_split.ndim >= 3 else 0
+    else:
+        unit_count = len(X_split)
+        cycle_count = int(sum(unit.shape[0] for unit in X_split))
+        timesteps = int(X_split[0].shape[1]) if unit_count else 0
+        num_features = int(X_split[0].shape[2]) if unit_count else 0
+
+    if isinstance(y_split, np.ndarray):
+        labels = y_split.reshape(-1)
+    else:
+        labels = np.concatenate(y_split) if len(y_split) > 0 else np.array([], dtype=np.float32)
+
+    return {
+        "units": unit_count,
+        "cycles": cycle_count,
+        "timesteps": timesteps,
+        "num_features": num_features,
+        "rul_min": float(labels.min()) if labels.size else None,
+        "rul_max": float(labels.max()) if labels.size else None,
+        "rul_mean": float(labels.mean()) if labels.size else None,
+        "rul_std": float(labels.std()) if labels.size else None,
+        "rul_median": float(np.median(labels)) if labels.size else None,
+    }
+
+
+def _describe_local_directory(path: Path) -> Dict[str, Any]:
+    """Return basic stats for a local cache directory."""
+    resolved = path.resolve()
+    if not resolved.exists():
+        return {
+            "path": str(resolved),
+            "exists": False,
+            "file_count": 0,
+            "size_bytes": 0,
+        }
+
+    file_count = 0
+    size_bytes = 0
+    for file_path in resolved.rglob("*"):
+        if file_path.is_file():
+            file_count += 1
+            size_bytes += file_path.stat().st_size
+
+    return {
+        "path": str(resolved),
+        "exists": True,
+        "file_count": file_count,
+        "size_bytes": size_bytes,
+    }
+
+
+def build_dataset_manifest(
+    dev_X: List[np.ndarray],
+    dev_y: List[np.ndarray],
+    val_X: Optional[List[np.ndarray]],
+    val_y: Optional[List[np.ndarray]],
+    test_X: Optional[List[np.ndarray]],
+    test_y: Optional[List[np.ndarray]],
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Describe the local dataset/cache state for experiment tracking."""
+    data_root = Path(os.environ.get("RUL_DATASETS_DATA_ROOT", "data/raw"))
+    manifest = {
+        "fd": None if config is None else config.get("fd"),
+        "cache_root": str(data_root.resolve()),
+        "cache": _describe_local_directory(data_root),
+        "splits": {
+            "dev": _describe_split(dev_X, dev_y),
+            "val": _describe_split(val_X, val_y),
+            "test": _describe_split(test_X, test_y),
+        },
+        "raw_data_uploaded_to_wandb": False,
+        "notes": "This manifest logs local cache metadata only; raw N-CMAPSS arrays are not uploaded automatically.",
+    }
+    return manifest
+
+
+def save_dataset_manifest(run_name: str, dataset_manifest: Dict[str, Any]) -> str:
+    """Persist dataset metadata locally so it can be attached to W&B as an artifact."""
+    results_dir = Path("results") / run_name
+    results_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = results_dir / "dataset_manifest.json"
+    with open(manifest_path, "w") as f:
+        json.dump(make_json_safe(dataset_manifest), f, indent=2)
+    return str(manifest_path)
+
+
+def log_dataset_manifest_artifact(run_name: str, dataset_manifest: Dict[str, Any]) -> str:
+    """Attach dataset metadata to the current W&B run without uploading raw training data."""
+    manifest_path = save_dataset_manifest(run_name, dataset_manifest)
+    artifact = wandb.Artifact(
+        name=f"{run_name}-dataset-manifest",
+        type="dataset",
+        description="Local N-CMAPSS cache metadata and split stats. Raw training arrays are not uploaded.",
+        metadata={
+            "fd": dataset_manifest.get("fd"),
+            "cache_root": dataset_manifest.get("cache_root"),
+            "raw_data_uploaded_to_wandb": False,
+        },
+    )
+    artifact.add_file(manifest_path, name="dataset_manifest.json")
+    wandb.log_artifact(artifact)
+    return manifest_path
+
+
+def log_checkpoint_artifact(
+    checkpoint_dir: str,
+    run_name: str,
+    model_name: str,
+    test_metrics: Dict[str, float],
+) -> str:
+    """Upload the saved checkpoint directory as a W&B model artifact."""
+    artifact = wandb.Artifact(
+        name=f"{run_name}-checkpoint",
+        type="model",
+        description="Trained model checkpoint and inference artifacts.",
+        metadata={
+            "model_name": model_name,
+            "run_name": run_name,
+            "rmse": test_metrics.get("rmse"),
+            "rmse_normalized": test_metrics.get("rmse_normalized"),
+        },
+    )
+    artifact.add_dir(checkpoint_dir)
+    wandb.log_artifact(artifact)
+    return artifact.name
+
+
 def train_model(
     dev_X: List[np.ndarray],
     dev_y: List[np.ndarray],
@@ -468,7 +838,8 @@ def train_model(
     config: Optional[Dict[str, Any]] = None,
     project_name: str = "n-cmapss-rul-prediction",
     run_name: Optional[str] = None,
-    normalize: bool = True,
+    normalize: bool = False,
+    diff_features: bool = False,
     visualize: bool = True,
     use_early_stop: bool = True,
     save_checkpoint: bool = True,
@@ -499,16 +870,24 @@ def train_model(
         "units": 64,
         "dense_units": 32,
         "dropout_rate": 0.2,
-        "learning_rate": 0.001,
+        "learning_rate": 3e-4,
         "batch_size": 32,
-        "epochs": 50,
+        "epochs": 200,
         "max_sequence_length": None,
         "loss_name": "asymmetric_mse",
         "loss_alpha": 2.0,
         "rul_clip_value": None,
-        "target_scaling": "none",
-        "gradient_clipnorm": None,
+        "target_scaling": "minmax",
+        "operating_condition_residuals": False,
+        "resolution_seconds": 1,
+        "prediction_aggregation": "none",
+        "aggregation_window": 100,
+        "aggregation_decay": 0.9,
+        "weight_decay": 0.0,
+        "gradient_clipnorm": 1.0,
         "gradient_clipvalue": None,
+        "lr_schedule": "cosine_warmup",
+        "warmup_epochs": 10,
         "validation_split": 0.2,
         "patience_early_stop": 10,
         "patience_lr_reduce": 5,
@@ -541,22 +920,67 @@ def train_model(
         reinit=True,
     )
 
+    raw_dev_X, raw_dev_y = dev_X, dev_y
+    raw_val_X, raw_val_y = val_X, val_y
+    raw_test_X, raw_test_y = test_X, test_y
+
+    residualizer = None
+    if config["operating_condition_residuals"]:
+        print("Fitting operating-condition residualizer on dev split...")
+        residualizer = OperatingConditionResidualizer().fit(dev_X, labels=dev_y)
+        dev_X = [residualizer.transform(unit) for unit in dev_X]
+        if val_X is not None:
+            val_X = [residualizer.transform(unit) for unit in val_X]
+        if test_X is not None:
+            test_X = [residualizer.transform(unit) for unit in test_X]
+
     # Prepare training data
     print(f"\nPreparing training data for {model_name}...")
-    X_train, y_train = prepare_sequences(dev_X, dev_y, config["max_sequence_length"])
+    X_train, y_train = prepare_sequences(
+        dev_X,
+        dev_y,
+        config["max_sequence_length"],
+        diff_features=diff_features,
+    )
     print(f"Training data shape: X={X_train.shape}, y={y_train.shape}")
 
     # Prepare validation data
     X_val, y_val = None, None
     if val_X is not None and val_y is not None:
-        X_val, y_val = prepare_sequences(val_X, val_y, config["max_sequence_length"])
+        X_val, y_val = prepare_sequences(
+            val_X, val_y, config["max_sequence_length"], diff_features=diff_features
+        )
         print(f"Validation data shape: X={X_val.shape}, y={y_val.shape}")
+    else:
+        print(
+            f"⚠️  No validation units provided — falling back to validation_split="
+            f"{config['validation_split']} (random slice of training cycles, not held-out engines). "
+            "This is a weaker hold-out; prefer passing a unit-level val split."
+        )
 
     # Prepare test data
     X_test, y_test = None, None
     if test_X is not None and test_y is not None:
-        X_test, y_test = prepare_sequences(test_X, test_y, config["max_sequence_length"])
+        X_test, y_test = prepare_sequences(
+            test_X, test_y, config["max_sequence_length"], diff_features=diff_features
+        )
         print(f"Test data shape: X={X_test.shape}, y={y_test.shape}")
+
+    dataset_manifest = build_dataset_manifest(
+        raw_dev_X, raw_dev_y, raw_val_X, raw_val_y, raw_test_X, raw_test_y, config
+    )
+    dataset_manifest_path = log_dataset_manifest_artifact(run_name, dataset_manifest)
+    wandb.summary.update(
+        {
+            "data/fd": dataset_manifest.get("fd"),
+            "data/cache_root": dataset_manifest["cache"]["path"],
+            "data/cache_exists": dataset_manifest["cache"]["exists"],
+            "data/cache_files": int(dataset_manifest["cache"]["file_count"]),
+            "data/cache_size_bytes": int(dataset_manifest["cache"]["size_bytes"]),
+            "data/raw_uploaded_to_wandb": False,
+            "data/manifest_path": dataset_manifest_path,
+        }
+    )
 
     y_train_fit, y_val_fit, y_test_fit, target_transform = transform_targets(
         y_train,
@@ -599,6 +1023,7 @@ def train_model(
         learning_rate=config["learning_rate"],
         loss_name=config["loss_name"],
         loss_alpha=config["loss_alpha"],
+        weight_decay=config["weight_decay"],
         gradient_clipnorm=config["gradient_clipnorm"],
         gradient_clipvalue=config["gradient_clipvalue"],
     )
@@ -619,20 +1044,22 @@ def train_model(
     validation_data = (X_val, y_val_fit) if X_val is not None and y_val_fit is not None else None
 
     # Callbacks
+    monitor = "val_loss" if validation_data else "loss"
     callbacks = [
         WandbCallback(
-            monitor="val_loss" if validation_data else "loss",
+            monitor=monitor,
             log_weights=False,
             log_gradients=False,
             save_model=False,
             save_graph=False,
         ),
-        keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss" if validation_data else "loss",
-            factor=0.5,
-            patience=config["patience_lr_reduce"],
-            min_lr=1e-7,
-            verbose=1,
+        make_lr_schedule_callback(
+            lr_schedule=config.get("lr_schedule", "cosine_warmup"),
+            peak_lr=config["learning_rate"],
+            total_epochs=config["epochs"],
+            warmup_epochs=config.get("warmup_epochs", 10),
+            patience_lr_reduce=config["patience_lr_reduce"],
+            monitor=monitor,
         ),
     ]
     if use_early_stop:
@@ -663,9 +1090,20 @@ def train_model(
     y_pred = None
     if X_test is not None and y_test is not None:
         print("\nEvaluating on test set...")
-        y_pred_fit = model.predict(X_test, verbose=0).flatten()
-        y_pred = inverse_transform_targets(y_pred_fit, target_transform)
-        y_test_eval = clip_rul_targets(y_test, config["rul_clip_value"])
+        y_test_eval, y_pred = evaluate_model_on_units(
+            model,
+            raw_test_X,
+            raw_test_y,
+            max_sequence_length=config["max_sequence_length"],
+            diff_features=diff_features,
+            scaler=scaler,
+            residualizer=residualizer,
+            target_transform=target_transform,
+            rul_clip_value=config["rul_clip_value"],
+            aggregation=config["prediction_aggregation"],
+            aggregation_window=config["aggregation_window"],
+            aggregation_decay=config["aggregation_decay"],
+        )
         test_metrics = compute_all_metrics(y_test_eval, y_pred, y_min=y_min, y_max=y_max)
 
         print(format_metrics(test_metrics))
@@ -734,7 +1172,9 @@ def train_model(
             )
 
             # Plot predictions
-            plot_predictions(y_test_eval, y_pred, model_name, save_path=f"{results_dir}/predictions.png")
+            plot_predictions(
+                y_test_eval, y_pred, model_name, save_path=f"{results_dir}/predictions.png"
+            )
 
             # Plot error distribution
             plot_error_distribution(
@@ -776,15 +1216,7 @@ def train_model(
             wandb.log({"predictions_table": predictions_table})
 
     # Log final training metrics
-    final_metrics = {
-        "final_train_loss": history.history["loss"][-1],
-        "final_train_mae": history.history["mae"][-1],
-        "epochs_trained": len(history.history["loss"]),
-    }
-    if validation_data:
-        final_metrics["final_val_loss"] = history.history["val_loss"][-1]
-        final_metrics["final_val_mae"] = history.history["val_mae"][-1]
-
+    final_metrics = build_final_training_metrics(history.history)
     wandb.log(final_metrics)
 
     # Enhanced W&B run summary with comprehensive metadata
@@ -797,23 +1229,38 @@ def train_model(
         "data/rul_min": float(y_min),
         "data/rul_max": float(y_max),
         "data/rul_range": float(y_max - y_min),
+        "data/rul_mean": float(np.mean(y_train)),
+        "data/rul_std": float(np.std(y_train)),
+        "data/rul_median": float(np.median(y_train)),
         "data/train_samples": int(len(y_train)),
         "data/input_timesteps": int(input_shape[0]),
         "data/num_features": int(input_shape[1]),
         # Training Config
         "training/epochs_trained": int(len(history.history["loss"])),
         "training/final_train_loss": float(history.history["loss"][-1]),
-        "training/final_train_mae": float(history.history["mae"][-1]),
         "training/batch_size": int(config["batch_size"]),
         "training/learning_rate": float(config["learning_rate"]),
+        "training/weight_decay": float(config["weight_decay"]),
         "training/loss_name": config["loss_name"],
         "training/loss_alpha": float(config["loss_alpha"]),
         "training/target_scaling": config["target_scaling"],
         "training/rul_clip_value": config["rul_clip_value"],
+        "training/operating_condition_residuals": bool(config["operating_condition_residuals"]),
+        "training/resolution_seconds": int(config["resolution_seconds"]),
+        "training/prediction_aggregation": config["prediction_aggregation"],
+        "training/aggregation_window": config["aggregation_window"],
+        "training/aggregation_decay": float(config["aggregation_decay"]),
         # Reproducibility
         "reproducibility/seed": seed,
         "reproducibility/git_hash": git_hash,
     }
+
+    if "rmse" in history.history:
+        summary_data["training/final_train_rmse"] = float(history.history["rmse"][-1])
+    if "mae" in history.history:
+        summary_data["training/final_train_mae"] = float(history.history["mae"][-1])
+    if "mape" in history.history:
+        summary_data["training/final_train_mape"] = float(history.history["mape"][-1])
 
     # Add validation metrics if available
     if validation_data:
@@ -821,19 +1268,34 @@ def train_model(
             {
                 "data/val_samples": int(len(y_val)),
                 "training/final_val_loss": float(history.history["val_loss"][-1]),
-                "training/final_val_mae": float(history.history["val_mae"][-1]),
             }
         )
+        if "val_rmse" in history.history:
+            summary_data["training/final_val_rmse"] = float(history.history["val_rmse"][-1])
+        if "val_mae" in history.history:
+            summary_data["training/final_val_mae"] = float(history.history["val_mae"][-1])
+        if "val_mape" in history.history:
+            summary_data["training/final_val_mape"] = float(history.history["val_mape"][-1])
 
     # Add test metrics if available
     if test_metrics:
         summary_data.update(
             {
                 "data/test_samples": int(len(y_test)),
+                # Core regression metrics
+                "results/best_mse": float(test_metrics["mse"]),
                 "results/best_rmse": float(test_metrics["rmse"]),
                 "results/best_mae": float(test_metrics["mae"]),
+                "results/best_mape": float(test_metrics["mape"]),
                 "results/best_r2": float(test_metrics["r2"]),
-                "results/best_phm_score": float(test_metrics["phm_score_normalized"]),
+                # Domain-specific metrics
+                "results/best_phm_score": float(test_metrics["phm_score"]),
+                "results/best_phm_score_normalized": float(test_metrics["phm_score_normalized"]),
+                "results/best_asymmetric_loss": float(test_metrics["asymmetric_loss"]),
+                # Accuracy at thresholds
+                "results/best_accuracy_10": float(test_metrics["accuracy_10"]),
+                "results/best_accuracy_15": float(test_metrics["accuracy_15"]),
+                "results/best_accuracy_20": float(test_metrics["accuracy_20"]),
             }
         )
 
@@ -848,6 +1310,7 @@ def train_model(
                 }
             )
 
+    summary_data.update(build_best_epoch_summary(history.history))
     wandb.summary.update(summary_data)
 
     # Save model checkpoint with all artifacts
@@ -855,6 +1318,7 @@ def train_model(
         checkpoint_dir = save_model_checkpoint(
             model=model,
             scaler=scaler,
+            residualizer=residualizer,
             config=config,
             test_metrics=test_metrics,
             model_name=model_name,
@@ -866,7 +1330,18 @@ def train_model(
 
         # Log checkpoint location to wandb
         wandb.log({"checkpoint/saved_path": checkpoint_dir})
-        wandb.summary.update({"checkpoint/directory": checkpoint_dir})
+        checkpoint_artifact_name = log_checkpoint_artifact(
+            checkpoint_dir=checkpoint_dir,
+            run_name=run_name,
+            model_name=model_name,
+            test_metrics=test_metrics,
+        )
+        wandb.summary.update(
+            {
+                "checkpoint/directory": checkpoint_dir,
+                "checkpoint/artifact_name": checkpoint_artifact_name,
+            }
+        )
     elif not save_checkpoint:
         print("\n⚠️  Model checkpoint saving disabled (--no-save flag)")
 
@@ -1089,7 +1564,7 @@ def load_config_from_json(config_path: str) -> Dict[str, Any]:
             "config": config,
             "fd": data.get("fd", 1),
             "project_name": data.get("project_name", "n-cmapss-rul-prediction"),
-            "normalize": data.get("normalize", True),
+            "normalize": data.get("normalize", False),
             "visualize": data.get("visualize", True),
         }
     else:
@@ -1099,7 +1574,7 @@ def load_config_from_json(config_path: str) -> Dict[str, Any]:
             "config": data.get("config", {}),
             "fd": data.get("fd", 1),
             "project_name": data.get("project_name", "n-cmapss-rul-prediction"),
-            "normalize": data.get("normalize", True),
+            "normalize": data.get("normalize", False),
             "visualize": data.get("visualize", True),
         }
 
@@ -1253,7 +1728,7 @@ Examples:
         "--loss",
         type=str,
         default="asymmetric_mse",
-        choices=["asymmetric_mse", "mse", "mae", "huber", "log_cosh"],
+        choices=["asymmetric_mse", "multi_zone_mse", "mse", "mae", "huber", "log_cosh"],
         help="Training loss to optimize (default: asymmetric_mse)",
     )
     parser.add_argument(
@@ -1271,15 +1746,70 @@ Examples:
     parser.add_argument(
         "--target-scaling",
         type=str,
-        default="none",
+        default="minmax",
         choices=["none", "minmax"],
-        help="Optional target scaling strategy for training (default: none)",
+        help="Optional target scaling strategy for training (default: minmax)",
+    )
+    parser.add_argument(
+        "--operating-condition-residuals",
+        action="store_true",
+        help="Replace non-W channels with residuals from a dev-split baseline fit on "
+        "operating conditions. This suppresses flight-phase variation without "
+        "using validation/test information.",
+    )
+    parser.add_argument(
+        "--resolution-seconds",
+        type=int,
+        default=1,
+        help="Average over this many consecutive seconds before windowing each "
+        "flight cycle (default: 1). Papers often use 10-second resolution.",
+    )
+    parser.add_argument(
+        "--prediction-aggregation",
+        type=str,
+        default="none",
+        choices=["none", "ema"],
+        help="Post-process per-cycle predictions during evaluation with a causal "
+        "aggregator (default: none)",
+    )
+    parser.add_argument(
+        "--aggregation-window",
+        type=int,
+        default=100,
+        help="Maximum causal history for prediction aggregation (default: 100 cycles)",
+    )
+    parser.add_argument(
+        "--aggregation-decay",
+        type=float,
+        default=0.9,
+        help="Decay factor for EMA aggregation (default: 0.9)",
     )
     parser.add_argument(
         "--gradient-clipnorm",
         type=float,
-        default=None,
-        help="Optional Adam clipnorm for training stability",
+        default=1.0,
+        help="Adam gradient clipnorm (default: 1.0 — on by default for stability)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.0,
+        help="AdamW weight decay (default: 0.0). Paper-style recipes often use 1e-3.",
+    )
+    parser.add_argument(
+        "--lr-schedule",
+        type=str,
+        default="cosine_warmup",
+        choices=["cosine_warmup", "reduce_on_plateau"],
+        help="LR schedule: cosine_warmup (default) or reduce_on_plateau (legacy). "
+        "cosine_warmup linearly ramps LR from 1e-6 to peak over --warmup-epochs, "
+        "then cosine-decays to 1e-6, preventing bad early convergence.",
+    )
+    parser.add_argument(
+        "--warmup-epochs",
+        type=int,
+        default=10,
+        help="Number of linear warm-up epochs before cosine decay (default: 10)",
     )
     parser.add_argument(
         "--gradient-clipvalue",
@@ -1322,9 +1852,29 @@ Examples:
 
     # Other options
     parser.add_argument(
-        "--no-normalize",
+        "--normalize",
         action="store_true",
-        help="Disable feature normalization",
+        help="Apply StandardScaler on top of the min-max scaling already done by NCmapssReader (double normalization — not recommended)",
+    )
+    parser.add_argument(
+        "--diff-features",
+        action="store_true",
+        help="Append cycle-to-cycle differential features (doubles feature count). "
+        "Captures rate-of-change in sensor readings — a direct degradation signal.",
+    )
+    parser.add_argument(
+        "--drop-virtual",
+        action="store_true",
+        help="Drop the 14 virtual sensor channels (X_v, channels 18-31), keeping only "
+        "operating conditions (W) and physical sensors (X_s) — 18 features instead of 32. "
+        "Literature reports 16-47%% RMSE reduction from this change.",
+    )
+    parser.add_argument(
+        "--paper-aligned",
+        action="store_true",
+        help="Enable a paper-style preprocessing recipe: drop virtual sensors, "
+        "fit healthy-cycle operating-condition residuals, use 10-second reader "
+        "resolution, and set AdamW weight decay to 1e-3 unless explicitly overridden.",
     )
     parser.add_argument(
         "--no-visualize",
@@ -1413,6 +1963,9 @@ Examples:
         run_hparam_search(args)
         return
 
+    # W&B is required for all training runs — fail fast if not configured
+    require_wandb()
+
     # Handle JSON config file
     if args.config:
         try:
@@ -1426,7 +1979,7 @@ Examples:
             args.model = json_config["model_name"]
             args.fd = json_config["fd"]
             args.project = json_config["project_name"]
-            args.no_normalize = not json_config["normalize"]
+            args.normalize = json_config["normalize"]
             args.no_visualize = not json_config["visualize"]
 
             # Merge JSON config into training config
@@ -1437,6 +1990,18 @@ Examples:
     else:
         json_training_config = {}
 
+    if args.paper_aligned:
+        args.drop_virtual = True
+        args.operating_condition_residuals = True
+        if args.resolution_seconds == 1:
+            args.resolution_seconds = 10
+        if args.weight_decay == 0.0:
+            args.weight_decay = 1e-3
+
+    if args.resolution_seconds < 1:
+        print("Error: --resolution-seconds must be >= 1")
+        sys.exit(1)
+
     # Validate arguments
     if not args.compare and not args.compare_all and not args.model:
         parser.print_help()
@@ -1444,25 +2009,49 @@ Examples:
         sys.exit(1)
 
     # Load data
+    resolution_seconds = json_training_config.get("resolution_seconds", args.resolution_seconds)
+    if resolution_seconds < 1:
+        print("Error: resolution_seconds must be >= 1")
+        sys.exit(1)
+    feature_select = PHYSICAL_CHANNELS if args.drop_virtual else None
     print(f"\nLoading N-CMAPSS FD{args.fd} dataset...")
-    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd)
+    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(
+        fd=args.fd,
+        feature_select=feature_select,
+        resolution_seconds=resolution_seconds,
+    )
     val_X, val_y = val_pair if val_pair else (None, None)
 
     # Training configuration - JSON config overrides CLI args
     config = {
+        "fd": args.fd,
         "units": json_training_config.get("units", args.units),
         "dense_units": json_training_config.get("dense_units", args.dense_units),
         "dropout_rate": json_training_config.get("dropout_rate", args.dropout),
         "learning_rate": json_training_config.get("learning_rate", args.lr),
         "batch_size": json_training_config.get("batch_size", args.batch_size),
         "epochs": json_training_config.get("epochs", args.epochs),
-        "loss_name": json_training_config.get("loss_name", json_training_config.get("loss", args.loss)),
+        "loss_name": json_training_config.get(
+            "loss_name", json_training_config.get("loss", args.loss)
+        ),
         "loss_alpha": json_training_config.get("loss_alpha", args.loss_alpha),
         "rul_clip_value": json_training_config.get("rul_clip_value", args.rul_clip),
         "target_scaling": json_training_config.get("target_scaling", args.target_scaling),
-        "gradient_clipnorm": json_training_config.get(
-            "gradient_clipnorm", args.gradient_clipnorm
+        "operating_condition_residuals": json_training_config.get(
+            "operating_condition_residuals",
+            args.operating_condition_residuals,
         ),
+        "resolution_seconds": resolution_seconds,
+        "prediction_aggregation": json_training_config.get(
+            "prediction_aggregation",
+            args.prediction_aggregation,
+        ),
+        "aggregation_window": json_training_config.get(
+            "aggregation_window", args.aggregation_window
+        ),
+        "aggregation_decay": json_training_config.get("aggregation_decay", args.aggregation_decay),
+        "weight_decay": json_training_config.get("weight_decay", args.weight_decay),
+        "gradient_clipnorm": json_training_config.get("gradient_clipnorm", args.gradient_clipnorm),
         "gradient_clipvalue": json_training_config.get(
             "gradient_clipvalue", args.gradient_clipvalue
         ),
@@ -1474,6 +2063,10 @@ Examples:
             "patience_lr_reduce", args.patience_lr_reduce
         ),
         "use_early_stop": json_training_config.get("use_early_stop", not args.no_early_stop),
+        "lr_schedule": json_training_config.get("lr_schedule", args.lr_schedule),
+        "warmup_epochs": json_training_config.get("warmup_epochs", args.warmup_epochs),
+        "drop_virtual": args.drop_virtual,
+        "diff_features": args.diff_features,
     }
 
     # Compare mode
@@ -1543,7 +2136,8 @@ Examples:
                 config=config,
                 project_name=args.project,
                 run_name=run_name,
-                normalize=not args.no_normalize,
+                normalize=args.normalize,
+                diff_features=args.diff_features,
                 visualize=not args.no_visualize and len(seeds) == 1,
                 use_early_stop=config.get("use_early_stop", True),
                 save_checkpoint=not args.no_save,
@@ -1589,7 +2183,9 @@ Examples:
                             k: float(np.std([m[k] for m in all_metrics if k in m]))
                             for k in metric_keys
                         },
-                        "per_seed": {str(seeds[i]): all_metrics[i] for i in range(len(all_metrics))},
+                        "per_seed": {
+                            str(seeds[i]): all_metrics[i] for i in range(len(all_metrics))
+                        },
                     }
                 )
                 summary_path = f"results/{model_name}_multiseed_summary.json"
@@ -1607,9 +2203,16 @@ Examples:
             from src.utils.interpretability import generate_interpretability_report
 
             print("\nGenerating interpretability report...")
-            X_te, y_te = prepare_sequences(test_X, test_y, config.get("max_sequence_length"))
-            if not args.no_normalize:
-                X_tr, _ = prepare_sequences(dev_X, dev_y, config.get("max_sequence_length"))
+            X_te, y_te = prepare_sequences(
+                test_X, test_y, config.get("max_sequence_length"), diff_features=args.diff_features
+            )
+            if args.normalize:
+                X_tr, _ = prepare_sequences(
+                    dev_X,
+                    dev_y,
+                    config.get("max_sequence_length"),
+                    diff_features=args.diff_features,
+                )
                 _, _, X_te, _ = normalize_data(X_tr, None, X_te)
             generate_interpretability_report(
                 model=model,

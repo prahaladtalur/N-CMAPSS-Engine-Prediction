@@ -1,20 +1,12 @@
 """
-Multi-Scale Temporal Convolutional Network (MSTCN) with Global Fusion Attention.
+Multi-Scale Temporal Convolutional Network (MSTCN) variants.
 
-Paper: An attention-based multi-scale temporal convolutional network for remaining
-       useful life prediction (2024)
+This module keeps the original repo MSTCN implementation for backwards
+compatibility and adds a paper-shaped SA-MSTCN-GFA variant that more closely
+matches the 2024 architecture:
 
-Architecture:
-    Input → Self-Attention (emphasize critical timesteps)
-          → Multi-Scale TCN (parallel branches with different dilations)
-          → Global Fusion Attention (intelligent multi-scale integration)
-          → Dense layers → RUL
-
-Key innovations:
-    - Multi-scale TCN captures patterns at different temporal resolutions
-    - Global Fusion Attention (GFA) intelligently combines multi-scale features
-    - GFA mechanism: channel attention + temporal attention + cross-scale fusion
-    - Adaptive gating suppresses redundant information across scales
+    Input → Self-Attention → 3 parallel TCN branches (different kernel scales)
+          → Global Fusion Attention → Dense layers → RUL
 """
 
 from __future__ import annotations
@@ -26,7 +18,6 @@ from tensorflow import keras
 from tensorflow.keras import layers
 
 from src.models.cata_tcn import ResidualTCNBlock, ChannelAttention1D, TemporalAttention1D
-from src.models.cnn_lstm_attention import SelfAttentionLayer
 
 
 def asymmetric_mse(alpha: float = 2.0):
@@ -39,6 +30,7 @@ def asymmetric_mse(alpha: float = 2.0):
     return loss
 
 
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
 class GlobalFusionAttention(layers.Layer):
     """
     Global Fusion Attention mechanism for multi-scale feature integration.
@@ -145,6 +137,52 @@ class GlobalFusionAttention(layers.Layer):
         return config
 
 
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
+class SequenceSelfAttention(layers.Layer):
+    """Sequence-preserving self-attention block for SA-MSTCN-GFA."""
+
+    def __init__(self, num_heads: int = 4, dropout_rate: float = 0.1, **kwargs):
+        super().__init__(**kwargs)
+        self.num_heads = num_heads
+        self.dropout_rate = dropout_rate
+        self.layer_norm = layers.LayerNormalization(epsilon=1e-6)
+        self.dropout = layers.Dropout(dropout_rate)
+        self.position_embedding = None
+        self.mha = None
+        self.add = layers.Add()
+
+    def build(self, input_shape: Tuple[int, ...]):
+        seq_length = input_shape[1]
+        feature_dim = input_shape[2]
+        key_dim = max(feature_dim // self.num_heads, 1)
+        self.position_embedding = self.add_weight(
+            name="position_embedding",
+            shape=(seq_length, feature_dim),
+            initializer="random_normal",
+            trainable=True,
+        )
+        self.mha = layers.MultiHeadAttention(
+            num_heads=self.num_heads,
+            key_dim=key_dim,
+            dropout=self.dropout_rate,
+            output_shape=feature_dim,
+            name="multi_head_attention",
+        )
+        super().build(input_shape)
+
+    def call(self, inputs: tf.Tensor, training: bool | None = None) -> tf.Tensor:
+        x = inputs + self.position_embedding
+        x = self.layer_norm(x)
+        attn_output = self.mha(x, x, training=training)
+        attn_output = self.dropout(attn_output, training=training)
+        return self.add([inputs, attn_output])
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"num_heads": self.num_heads, "dropout_rate": self.dropout_rate})
+        return config
+
+
 def build_mstcn_model(
     input_shape: Tuple[int, int],
     units: int = 64,
@@ -225,6 +263,75 @@ def build_mstcn_model(
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss=asymmetric_mse(),
-        metrics=["mae", "mape"],
+        metrics=[keras.metrics.RootMeanSquaredError(name="rmse"), "mae", "mape"],
+    )
+    return model
+
+
+def build_sa_mstcn_gfa_model(
+    input_shape: Tuple[int, int],
+    units: int = 64,
+    dense_units: int = 32,
+    dropout_rate: float = 0.2,
+    learning_rate: float = 0.001,
+    branch_kernel_sizes: List[int] = None,
+    branch_dilations: List[int] = None,
+    num_heads: int = 4,
+) -> keras.Model:
+    """Build the paper-shaped SA-MSTCN-GFA model.
+
+    The key differences vs the legacy repo MSTCN are:
+    - a real self-attention block at the head
+    - three parallel branches with different kernel sizes for short/medium/long scales
+    - a shared short dilation stack inside each branch
+    """
+    if branch_kernel_sizes is None:
+        branch_kernel_sizes = [3, 5, 7]
+    if branch_dilations is None:
+        branch_dilations = [1, 2]
+
+    inputs = layers.Input(shape=input_shape, name="input")
+    x = SequenceSelfAttention(
+        num_heads=num_heads,
+        dropout_rate=dropout_rate,
+        name="head_self_attention",
+    )(inputs)
+
+    tcn_outputs = []
+    for branch_idx, branch_kernel_size in enumerate(branch_kernel_sizes):
+        branch = x
+        for block_idx, dilation_rate in enumerate(branch_dilations, start=1):
+            branch = ResidualTCNBlock(
+                filters=units,
+                kernel_size=branch_kernel_size,
+                dilation_rate=dilation_rate,
+                dropout_rate=dropout_rate,
+                name=f"mstcn_branch{branch_idx}_block{block_idx}",
+            )(branch)
+        tcn_outputs.append(branch)
+
+    fused = GlobalFusionAttention(
+        num_scales=len(branch_kernel_sizes),
+        reduction_ratio=8,
+        name="global_fusion",
+    )(tcn_outputs)
+    fused = layers.Conv1D(
+        filters=units,
+        kernel_size=1,
+        padding="same",
+        activation="relu",
+        name="fusion_projection",
+    )(fused)
+
+    x = layers.GlobalAveragePooling1D(name="global_pooling")(fused)
+    x = layers.Dense(dense_units, activation="relu", name="dense_1")(x)
+    x = layers.Dropout(dropout_rate, name="dropout")(x)
+    outputs = layers.Dense(1, activation="linear", name="output")(x)
+
+    model = keras.Model(inputs=inputs, outputs=outputs, name="sa_mstcn_gfa")
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        loss=asymmetric_mse(),
+        metrics=[keras.metrics.RootMeanSquaredError(name="rmse"), "mae", "mape"],
     )
     return model
