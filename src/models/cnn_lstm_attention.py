@@ -18,6 +18,7 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 
+@tf.keras.utils.register_keras_serializable(package="NCMAPSS")
 class SelfAttentionLayer(layers.Layer):
     """
     Self-attention mechanism for sequence data.

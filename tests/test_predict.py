@@ -27,12 +27,23 @@ def _write_artifacts(
     scale_min: Optional[float] = None,
     scale_max: Optional[float] = None,
     clip_value: Optional[float] = None,
+    prediction_aggregation: str = "none",
+    aggregation_window: Optional[int] = None,
+    aggregation_decay: float = 0.9,
 ):
     model_dir.mkdir(parents=True, exist_ok=True)
     (model_dir / "model.keras").write_text("stub", encoding="utf-8")
 
     with open(model_dir / "config.json", "w", encoding="utf-8") as f:
-        json.dump({"max_sequence_length": max_sequence_length}, f)
+        json.dump(
+            {
+                "max_sequence_length": max_sequence_length,
+                "prediction_aggregation": prediction_aggregation,
+                "aggregation_window": aggregation_window,
+                "aggregation_decay": aggregation_decay,
+            },
+            f,
+        )
 
     with open(model_dir / "scaler.pkl", "wb") as f:
         pickle.dump(None, f)
@@ -127,7 +138,11 @@ def test_evaluate_test_set_clips_ground_truth(monkeypatch, tmp_path):
     monkeypatch.setattr("predict.tf.keras.models.load_model", lambda *args, **kwargs: model)
     monkeypatch.setattr(
         "predict.get_datasets",
-        lambda fd: (None, None, ([np.ones((1, 5, 3), dtype=np.float32)], [np.array([150.0])])),  # type: ignore[arg-type]
+        lambda fd, feature_select=None: (  # type: ignore[arg-type]
+            None,
+            None,
+            ([np.ones((1, 5, 3), dtype=np.float32)], [np.array([150.0])]),
+        ),
     )
 
     captured = {}
@@ -150,3 +165,33 @@ def test_evaluate_test_set_clips_ground_truth(monkeypatch, tmp_path):
     assert np.array_equal(captured["y_pred"], np.array([125.0]))
     assert captured["y_min"] == 0.0
     assert captured["y_max"] == 125.0
+
+
+def test_predict_unit_applies_causal_ema(monkeypatch, tmp_path):
+    model = FakeModel(10.0)
+    model_path = tmp_path / "single" / "model.keras"
+    _write_artifacts(
+        model_path.parent,
+        max_sequence_length=5,
+        prediction_aggregation="ema",
+        aggregation_window=3,
+        aggregation_decay=0.5,
+    )
+
+    monkeypatch.setattr("predict.tf.keras.models.load_model", lambda *args, **kwargs: model)
+
+    predictor = RULPredictor(model_path=str(model_path))
+
+    predictions = iter([10.0, 20.0, 40.0, 80.0])
+
+    def fake_predict_single(_sequence):
+        return {"prediction": next(predictions)}
+
+    monkeypatch.setattr(predictor, "predict_single", fake_predict_single)
+    y_true, y_pred, _ = predictor.predict_unit(
+        np.ones((4, 5, 3), dtype=np.float32),
+        np.array([4.0, 3.0, 2.0, 1.0], dtype=np.float32),
+    )
+
+    assert np.array_equal(y_true, np.array([4.0, 3.0, 2.0, 1.0], dtype=np.float32))
+    assert np.allclose(y_pred, np.array([10.0, 16.666666, 30.0, 60.0], dtype=np.float32))

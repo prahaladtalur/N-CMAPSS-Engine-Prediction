@@ -9,7 +9,7 @@ from src.models.base import BaseModel
 from src.models.cata_tcn import build_cata_tcn_model
 from src.models.cnn_lstm_attention import build_cnn_lstm_attention_model
 from src.models.mdfa import MDFAModule
-from src.models.mstcn import build_mstcn_model
+from src.models.mstcn import build_mstcn_model, build_sa_mstcn_gfa_model
 from src.models.registry import ModelRegistry
 from src.models.sparse_transformer_bigrcu import build_sparse_transformer_bigrcu_model
 from src.models.ttsnet import build_ttsnet_model
@@ -46,6 +46,39 @@ class MDFAModel(BaseModel):
         x = layers.Dropout(dropout_rate)(x)
         outputs = layers.Dense(1, activation="linear")(x)
         model = keras.Model(inputs=inputs, outputs=outputs, name="mdfa")
+        return BaseModel.compile_model(model, learning_rate)
+
+
+@ModelRegistry.register("mdfa_paper")
+class MDFAPaperModel(BaseModel):
+    """Paper-shaped MDFA wrapper with a lightweight fully connected head."""
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        dilation_rates: list = None,
+    ) -> keras.Model:
+        if dilation_rates is None:
+            dilation_rates = [1, 2, 4]
+
+        inputs = layers.Input(shape=input_shape)
+        x = MDFAModule(
+            filters=units,
+            dilation_rates=dilation_rates,
+            kernel_size=3,
+            dropout_rate=dropout_rate,
+        )(inputs)
+        x = layers.GlobalAveragePooling1D()(x)
+        x = layers.Dense(dense_units * 2, activation="relu")(x)
+        x = layers.Dropout(dropout_rate)(x)
+        x = layers.Dense(dense_units, activation="relu")(x)
+        x = layers.Dropout(dropout_rate)(x)
+        outputs = layers.Dense(1, activation="linear")(x)
+        model = keras.Model(inputs=inputs, outputs=outputs, name="mdfa_paper")
         return BaseModel.compile_model(model, learning_rate)
 
 
@@ -205,4 +238,27 @@ class MSTCNModel(BaseModel):
             learning_rate=learning_rate,
             kernel_size=kernel_size,
             dilation_rates=dilation_rates,
+        )
+
+
+@ModelRegistry.register("sa_mstcn_gfa")
+class SAMSTCNGFAModel(BaseModel):
+    """Paper-shaped SA-MSTCN-GFA wrapper."""
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        num_heads: int = 4,
+    ) -> keras.Model:
+        return build_sa_mstcn_gfa_model(
+            input_shape=input_shape,
+            units=units,
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            learning_rate=learning_rate,
+            num_heads=num_heads,
         )

@@ -25,8 +25,10 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-from src.data.load_data import get_datasets
+from src.data.load_data import get_datasets, PHYSICAL_CHANNELS
+from src.data.preprocessing import transform_feature_array
 from src.utils.metrics import compute_all_metrics, format_metrics
+from src.utils.postprocessing import causal_exponential_moving_average
 
 
 class RULPredictor:
@@ -92,6 +94,7 @@ class RULPredictor:
         self.config = self.model_specs[0]["config"]
         self.max_seq_length = self.model_specs[0]["max_seq_length"]
         self.scaler = self.model_specs[0]["scaler"]
+        self.residualizer = self.model_specs[0]["residualizer"]
 
         y_min_values = {spec["y_min"] for spec in self.model_specs}
         y_max_values = {spec["y_max"] for spec in self.model_specs}
@@ -104,6 +107,9 @@ class RULPredictor:
             self.y_max = None
 
         self.eval_clip_value = next(iter(clip_values)) if len(clip_values) == 1 else None
+        self.prediction_aggregation = self.config.get("prediction_aggregation", "none")
+        self.aggregation_window = self.config.get("aggregation_window")
+        self.aggregation_decay = self.config.get("aggregation_decay", 0.9)
 
     @staticmethod
     def _asymmetric_mse(alpha: float = 2.0):
@@ -137,6 +143,13 @@ class RULPredictor:
                 scaler = pickle.load(f)
             print(f"✓ Feature scaler loaded from: {scaler_path}")
 
+        residualizer_path = os.path.join(model_dir, "residualizer.pkl")
+        residualizer = None
+        if os.path.exists(residualizer_path):
+            with open(residualizer_path, "rb") as f:
+                residualizer = pickle.load(f)
+            print(f"✓ Residualizer loaded from: {residualizer_path}")
+
         rul_scaler_path = os.path.join(model_dir, "rul_scaler.json")
         target_transform = {
             "clip_value": None,
@@ -167,6 +180,7 @@ class RULPredictor:
             "config": config,
             "max_seq_length": config.get("max_sequence_length", 1000),
             "scaler": scaler,
+            "residualizer": residualizer,
             "target_transform": target_transform,
             "y_min": y_min,
             "y_max": y_max,
@@ -187,6 +201,7 @@ class RULPredictor:
         self,
         sequence: np.ndarray,
         max_seq_length: int,
+        residualizer: Optional[Any],
         scaler: Optional[Any],
     ) -> np.ndarray:
         """
@@ -202,9 +217,7 @@ class RULPredictor:
         if len(sequence) > max_seq_length:
             sequence = sequence[-max_seq_length:]
 
-        # Normalize
-        if scaler is not None:
-            sequence = scaler.transform(sequence)
+        sequence = transform_feature_array(sequence, residualizer=residualizer, scaler=scaler)
 
         return sequence[np.newaxis, ...]  # add batch dim
 
@@ -222,7 +235,12 @@ class RULPredictor:
         individual_preds = {}
 
         for spec in self.model_specs:
-            X = self._prepare_single(sequence, spec["max_seq_length"], spec["scaler"])
+            X = self._prepare_single(
+                sequence,
+                spec["max_seq_length"],
+                spec["residualizer"],
+                spec["scaler"],
+            )
             pred = float(spec["model"].predict(X, verbose=0)[0, 0])
             pred = self._inverse_transform_prediction(pred, spec["target_transform"])
             predictions.append(pred)
@@ -270,7 +288,14 @@ class RULPredictor:
             result = self.predict_single(unit_X[cycle_idx])
             y_pred.append(result["prediction"])
             details.append(result)
-        return unit_y, np.array(y_pred), details
+        predictions = np.array(y_pred, dtype=np.float32)
+        if self.prediction_aggregation == "ema":
+            predictions = causal_exponential_moving_average(
+                predictions,
+                decay=float(self.aggregation_decay),
+                window=self.aggregation_window,
+            )
+        return unit_y, predictions, details
 
     def evaluate_test_set(
         self,
@@ -290,7 +315,8 @@ class RULPredictor:
             Dictionary of evaluation metrics
         """
         print(f"\nLoading N-CMAPSS FD{fd} test set...")
-        _, _, (test_X, test_y) = get_datasets(fd=fd)
+        feature_select = PHYSICAL_CHANNELS if self.config.get("drop_virtual") else None
+        _, _, (test_X, test_y) = get_datasets(fd=fd, feature_select=feature_select)
 
         all_true, all_pred = [], []
         for unit_id in range(len(test_X)):
@@ -402,7 +428,8 @@ Examples:
     # Specific test unit
     elif args.unit_id is not None:
         print(f"\nLoading N-CMAPSS FD{args.fd} test set...")
-        _, _, (test_X, test_y) = get_datasets(fd=args.fd)
+        feature_select = PHYSICAL_CHANNELS if predictor.config.get("drop_virtual") else None
+        _, _, (test_X, test_y) = get_datasets(fd=args.fd, feature_select=feature_select)
 
         if args.unit_id >= len(test_X):
             print(f"❌ Unit ID {args.unit_id} out of range (max: {len(test_X)-1})")

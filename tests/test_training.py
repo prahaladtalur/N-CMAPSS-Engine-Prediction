@@ -188,6 +188,31 @@ class TestTargetTransforms:
             self.transform_targets(np.array([1.0], dtype=np.float32), scaling="zscore")
 
 
+class TestOperatingConditionResidualizer:
+    @pytest.fixture(autouse=True)
+    def _import(self):
+        from src.data.preprocessing import OperatingConditionResidualizer
+
+        self.OperatingConditionResidualizer = OperatingConditionResidualizer
+
+    def test_residualizer_removes_linear_operating_condition_signal(self):
+        operating = np.array(
+            [
+                [[1.0, 2.0, 3.0, 4.0], [2.0, 3.0, 4.0, 5.0]],
+                [[3.0, 4.0, 5.0, 6.0], [4.0, 5.0, 6.0, 7.0]],
+            ],
+            dtype=np.float32,
+        )
+        sensor = 2.0 * operating[..., 0] - 0.5 * operating[..., 1] + 7.0
+        unit = np.concatenate([operating, sensor[..., np.newaxis]], axis=-1)
+
+        residualizer = self.OperatingConditionResidualizer().fit([unit])
+        transformed = residualizer.transform(unit)
+
+        assert np.allclose(transformed[..., 4], 0.0, atol=1e-5)
+        assert np.allclose(transformed[..., :4], operating)
+
+
 class TestJsonSafety:
     """Test JSON-safe serialization helpers used by training outputs."""
 

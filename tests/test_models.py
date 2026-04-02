@@ -64,12 +64,14 @@ class TestModelRegistry:
             "cnn_gru",
             "inception_lstm",
             "mdfa",
+            "mdfa_paper",
             "cnn_lstm_attention",
             "cata_tcn",
             "ttsnet",
             "atcn",
             "sparse_transformer_bigrcu",
             "mstcn",
+            "sa_mstcn_gfa",
         }
         assert expected.issubset(registered), f"Missing models: {expected - registered}"
 

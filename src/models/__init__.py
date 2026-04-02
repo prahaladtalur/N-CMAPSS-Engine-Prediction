@@ -50,6 +50,7 @@ def get_model_info() -> dict[str, str]:
         "inception_lstm": "Inception-LSTM - multi-scale feature extraction",
         "transformer": "Transformer encoder - self-attention based, very SOTA",
         "mdfa": "MDFA - Multi-scale dilated fusion attention (paper SOTA, RMSE_norm 0.021-0.032)",
+        "mdfa_paper": "MDFA paper variant - MDFA module with lightweight FC head, closer to the published setup",
         "cnn_lstm_attention": "CNN-LSTM-Attention - 2024 SOTA (CMAPSS RMSE 13.907-16.637)",
         "cbam_cnn_lstm": "CBAM-CNN-LSTM - channel+temporal attention (DS02 RMSE 5.50, Li et al. PeerJ 2022)",
         "cata_tcn": "CATA-TCN - Channel+Temporal Attention over TCN backbone",
@@ -57,6 +58,7 @@ def get_model_info() -> dict[str, str]:
         "atcn": "ATCN - Attention-based TCN with ISA and squeeze-excitation (2023 SOTA)",
         "sparse_transformer_bigrcu": "Sparse Transformer+Bi-GRCU - LRLS attention, most recent (2025 SOTA)",
         "mstcn": "MSTCN - Multi-scale TCN with Global Fusion Attention (2024 SOTA)",
+        "sa_mstcn_gfa": "SA-MSTCN-GFA - paper-shaped MSTCN with head self-attention and 3-scale TCN branches",
         "mlp": "Simple MLP - baseline for comparison (no temporal modeling)",
     }
 
@@ -67,11 +69,13 @@ def get_model_recommendations() -> dict[str, list]:
         "quick_baseline": ["mlp", "gru"],
         "best_accuracy": [
             "sparse_transformer_bigrcu",
+            "sa_mstcn_gfa",
             "mstcn",
             "ttsnet",
             "atcn",
             "cata_tcn",
             "cnn_lstm_attention",
+            "mdfa_paper",
             "mdfa",
             "transformer",
             "attention_lstm",
@@ -80,6 +84,7 @@ def get_model_recommendations() -> dict[str, list]:
         "most_interpretable": ["lstm", "attention_lstm"],
         "long_sequences": [
             "sparse_transformer_bigrcu",
+            "sa_mstcn_gfa",
             "mstcn",
             "ttsnet",
             "atcn",
@@ -96,6 +101,7 @@ def get_model_recommendations() -> dict[str, list]:
             "atcn",
             "cata_tcn",
             "cnn_lstm_attention",
+            "mdfa_paper",
             "mdfa",
             "transformer",
             "wavenet",
