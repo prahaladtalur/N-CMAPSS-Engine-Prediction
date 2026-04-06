@@ -251,6 +251,49 @@ class RULPredictor:
         else:
             return "LOW"
 
+    def predict_with_uncertainty(
+        self, sequence: np.ndarray, n_passes: int = 50
+    ) -> Tuple[float, float]:
+        """Estimate prediction uncertainty via MC Dropout.
+
+        Runs ``n_passes`` stochastic forward passes with dropout active and
+        returns the mean and standard deviation of the resulting predictions.
+        No architectural changes required — existing dropout layers provide the
+        stochasticity.
+
+        Args:
+            sequence: Raw sensor data (timesteps, features)
+            n_passes: Number of Monte Carlo forward passes (default: 50)
+
+        Returns:
+            (mean_rul, std_rul) — point estimate and epistemic uncertainty.
+        """
+        spec = self.model_specs[0]
+        X = self._prepare_single(sequence, spec["max_seq_length"], spec["scaler"])
+        preds = []
+        for _ in range(n_passes):
+            # training=True keeps dropout active during inference
+            raw = float(spec["model"](X, training=True)[0, 0])
+            preds.append(self._inverse_transform_prediction(raw, spec["target_transform"]))
+        return float(np.mean(preds)), float(np.std(preds))
+
+    def predict_monotonic(self, sequences: List[np.ndarray]) -> np.ndarray:
+        """Predict RUL for consecutive engine readings, enforcing monotonic decrease.
+
+        Applies a cumulative minimum so that the predicted RUL never increases
+        between consecutive timesteps, which is physically required (degradation
+        is irreversible).
+
+        Args:
+            sequences: List of raw sensor arrays, one per timestep
+                       Each element: (timesteps, features)
+
+        Returns:
+            Monotonically non-increasing RUL predictions, shape (len(sequences),)
+        """
+        raw_preds = np.array([self.predict_single(seq)["prediction"] for seq in sequences])
+        return np.minimum.accumulate(raw_preds)
+
     def predict_unit(
         self, unit_X: np.ndarray, unit_y: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, List[Dict]]:
