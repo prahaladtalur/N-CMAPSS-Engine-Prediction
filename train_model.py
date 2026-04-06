@@ -177,6 +177,26 @@ def normalize_data(
     return X_train_norm, X_val_norm, X_test_norm, scaler
 
 
+def compute_zone_weights(y: np.ndarray) -> np.ndarray:
+    """Compute per-sample weights emphasizing critical (low-RUL) zones.
+
+    Three zones based on RUL value:
+      - Critical zone  (RUL <= 30):        weight 2.5  (most safety-critical)
+      - Warning zone   (30 < RUL <= 80):   weight 1.5
+      - Normal zone    (RUL > 80):         weight 1.0
+
+    Args:
+        y: RUL target array, shape (N,)
+
+    Returns:
+        Per-sample weight array of the same shape, dtype float32.
+    """
+    weights = np.ones_like(y, dtype=np.float32)
+    weights[y <= 30] = 2.5
+    weights[(y > 30) & (y <= 80)] = 1.5
+    return weights
+
+
 def clip_rul_targets(y: np.ndarray, max_rul: Optional[float] = None) -> np.ndarray:
     """Cap RUL targets at ``max_rul`` when configured."""
     clipped = np.asarray(y, dtype=np.float32).copy()
@@ -513,6 +533,7 @@ def train_model(
         "patience_early_stop": 10,
         "patience_lr_reduce": 5,
         "use_early_stop": True,
+        "critical_zone_weights": False,
     }
 
     if config is None:
@@ -645,6 +666,12 @@ def train_model(
             )
         )
 
+    # Compute optional critical-zone sample weights
+    sample_weight = None
+    if config.get("critical_zone_weights", False):
+        sample_weight = compute_zone_weights(y_train_fit)
+        print("Critical-zone weighting enabled (2.5x / 1.5x / 1.0x by RUL bucket)")
+
     # Train model
     print("\nStarting training...")
     history = model.fit(
@@ -655,6 +682,7 @@ def train_model(
         validation_data=(X_val, y_val_fit) if X_val is not None and y_val_fit is not None else None,
         validation_split=config["validation_split"] if validation_data is None else None,
         callbacks=callbacks,
+        sample_weight=sample_weight,
         verbose=1,
     )
 
@@ -1381,6 +1409,13 @@ Examples:
         help="Optional file containing an integer worker count that can be edited live",
     )
 
+    parser.add_argument(
+        "--critical-zone-weights",
+        action="store_true",
+        default=False,
+        help="Weight training samples by RUL zone (2.5x critical ≤30, 1.5x warning ≤80, 1.0x normal)",
+    )
+
     # Reproducibility options
     parser.add_argument(
         "--seed",
@@ -1474,6 +1509,9 @@ Examples:
             "patience_lr_reduce", args.patience_lr_reduce
         ),
         "use_early_stop": json_training_config.get("use_early_stop", not args.no_early_stop),
+        "critical_zone_weights": json_training_config.get(
+            "critical_zone_weights", args.critical_zone_weights
+        ),
     }
 
     # Compare mode
