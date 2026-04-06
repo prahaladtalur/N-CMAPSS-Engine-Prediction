@@ -17,6 +17,7 @@ from src.models import baseline  # noqa: F401
 from src.models import cnn  # noqa: F401
 from src.models import hybrid  # noqa: F401
 from src.models import rnn  # noqa: F401
+from src.models import mamba_rul  # noqa: F401
 from src.models import sota  # noqa: F401
 
 
@@ -56,6 +57,7 @@ def get_model_info() -> dict[str, str]:
         "atcn": "ATCN - Attention-based TCN with ISA and squeeze-excitation (2023 SOTA)",
         "sparse_transformer_bigrcu": "Sparse Transformer+Bi-GRCU - LRLS attention, most recent (2025 SOTA)",
         "mstcn": "MSTCN - Multi-scale TCN with Global Fusion Attention (2024 SOTA)",
+        "mamba_rul": "Mamba-inspired Selective SSM — O(N) complexity, input-dependent state transitions (2023)",
         "mlp": "Simple MLP - baseline for comparison (no temporal modeling)",
     }
 
@@ -66,6 +68,7 @@ def get_model_recommendations() -> dict[str, list]:
         "quick_baseline": ["mlp", "gru"],
         "best_accuracy": [
             "sparse_transformer_bigrcu",
+            "mamba_rul",
             "mstcn",
             "ttsnet",
             "atcn",
