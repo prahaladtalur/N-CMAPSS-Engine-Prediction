@@ -9,7 +9,7 @@ from src.models.base import BaseModel
 from src.models.cata_tcn import build_cata_tcn_model
 from src.models.cnn_lstm_attention import build_cnn_lstm_attention_model
 from src.models.mdfa import MDFAModule
-from src.models.mstcn import build_mstcn_model
+from src.models.mstcn import build_mstcn_model, build_mstcn_noncausal_model
 from src.models.registry import ModelRegistry
 from src.models.sparse_transformer_bigrcu import build_sparse_transformer_bigrcu_model
 from src.models.ttsnet import build_ttsnet_model
@@ -198,6 +198,38 @@ class MSTCNModel(BaseModel):
         dilation_rates: list = None,
     ) -> keras.Model:
         return build_mstcn_model(
+            input_shape=input_shape,
+            units=units,
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            learning_rate=learning_rate,
+            kernel_size=kernel_size,
+            dilation_rates=dilation_rates,
+        )
+
+
+@ModelRegistry.register("mstcn_noncausal")
+class MSTCNNonCausal(BaseModel):
+    """MSTCN with non-causal (bidirectional context) convolutions.
+
+    Uses ``padding='same'`` instead of ``padding='causal'`` in every
+    ``ResidualTCNBlock``.  Each dilated convolution can attend to both past and
+    future timesteps within the window, doubling the effective receptive field
+    without any additional parameters.  Only valid for offline/batch prediction
+    where the full sequence is available at inference time.
+    """
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.2,
+        learning_rate: float = 0.001,
+        kernel_size: int = 3,
+        dilation_rates: list = None,
+    ) -> keras.Model:
+        return build_mstcn_noncausal_model(
             input_shape=input_shape,
             units=units,
             dense_units=dense_units,

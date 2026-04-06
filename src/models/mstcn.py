@@ -228,3 +228,84 @@ def build_mstcn_model(
         metrics=["mae", "mape"],
     )
     return model
+
+
+def build_mstcn_noncausal_model(
+    input_shape: Tuple[int, int],
+    units: int = 64,
+    dense_units: int = 32,
+    dropout_rate: float = 0.2,
+    learning_rate: float = 0.001,
+    kernel_size: int = 3,
+    dilation_rates: List[int] = None,
+) -> keras.Model:
+    """
+    Build non-causal MSTCN model for offline/batch RUL prediction.
+
+    Identical to ``build_mstcn_model`` but uses ``padding='same'`` in every
+    ``ResidualTCNBlock`` instead of ``padding='causal'``.  Because each
+    convolution can see both past *and* future context within the window, the
+    effective receptive field is doubled without adding parameters.  This is
+    only valid for offline (non-streaming) inference where the full sequence is
+    available at prediction time.
+
+    Args:
+        input_shape: (sequence_length, num_features)
+        units: Number of filters in TCN blocks
+        dense_units: Number of units in final dense layer
+        dropout_rate: Dropout probability
+        learning_rate: Optimizer learning rate
+        kernel_size: Kernel size for TCN convolutions
+        dilation_rates: List of dilation rates for multi-scale branches
+                       (default: [1, 2, 4, 8])
+
+    Returns:
+        Compiled Keras model
+    """
+    if dilation_rates is None:
+        dilation_rates = [1, 2, 4, 8]
+
+    num_scales = len(dilation_rates)
+
+    inputs = layers.Input(shape=input_shape, name="input")
+
+    tcn_outputs = []
+    for i, dilation_rate in enumerate(dilation_rates):
+        branch = inputs
+
+        branch = ResidualTCNBlock(
+            filters=units,
+            kernel_size=kernel_size,
+            dilation_rate=dilation_rate,
+            dropout_rate=dropout_rate,
+            causal=False,
+            name=f"tcn_scale{i}_block1",
+        )(branch)
+
+        branch = ResidualTCNBlock(
+            filters=units,
+            kernel_size=kernel_size,
+            dilation_rate=dilation_rate,
+            dropout_rate=dropout_rate,
+            causal=False,
+            name=f"tcn_scale{i}_block2",
+        )(branch)
+
+        tcn_outputs.append(branch)
+
+    fused = GlobalFusionAttention(num_scales=num_scales, reduction_ratio=8, name="global_fusion")(
+        tcn_outputs
+    )
+
+    x = layers.GlobalAveragePooling1D(name="global_pooling")(fused)
+    x = layers.Dense(dense_units, activation="relu", name="dense_1")(x)
+    x = layers.Dropout(dropout_rate, name="dropout")(x)
+    outputs = layers.Dense(1, activation="linear", name="output")(x)
+
+    model = keras.Model(inputs=inputs, outputs=outputs, name="mstcn_noncausal")
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        loss=asymmetric_mse(),
+        metrics=["mae", "mape"],
+    )
+    return model
