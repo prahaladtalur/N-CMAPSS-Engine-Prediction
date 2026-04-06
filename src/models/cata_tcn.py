@@ -28,6 +28,7 @@ class ResidualTCNBlock(layers.Layer):
         kernel_size: int,
         dilation_rate: int,
         dropout_rate: float,
+        causal: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -35,19 +36,21 @@ class ResidualTCNBlock(layers.Layer):
         self.kernel_size = kernel_size
         self.dilation_rate = dilation_rate
         self.dropout_rate = dropout_rate
+        self.causal = causal
 
+        padding = "causal" if self.causal else "same"
         self.conv1 = layers.Conv1D(
             filters=filters,
             kernel_size=kernel_size,
             dilation_rate=dilation_rate,
-            padding="causal",
+            padding=padding,
             activation="relu",
         )
         self.conv2 = layers.Conv1D(
             filters=filters,
             kernel_size=kernel_size,
             dilation_rate=dilation_rate,
-            padding="causal",
+            padding=padding,
             activation="relu",
         )
         self.drop1 = layers.Dropout(dropout_rate)
@@ -66,6 +69,19 @@ class ResidualTCNBlock(layers.Layer):
         x = self.drop2(x, training=training)
         residual = self.proj(inputs) if self.proj is not None else inputs
         return layers.add([x, residual])
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "filters": self.filters,
+                "kernel_size": self.kernel_size,
+                "dilation_rate": self.dilation_rate,
+                "dropout_rate": self.dropout_rate,
+                "causal": self.causal,
+            }
+        )
+        return config
 
 
 class ChannelAttention1D(layers.Layer):

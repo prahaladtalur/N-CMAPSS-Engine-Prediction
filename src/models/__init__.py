@@ -56,6 +56,7 @@ def get_model_info() -> dict[str, str]:
         "atcn": "ATCN - Attention-based TCN with ISA and squeeze-excitation (2023 SOTA)",
         "sparse_transformer_bigrcu": "Sparse Transformer+Bi-GRCU - LRLS attention, most recent (2025 SOTA)",
         "mstcn": "MSTCN - Multi-scale TCN with Global Fusion Attention (2024 SOTA)",
+        "mstcn_noncausal": "MSTCN with non-causal (same) padding — doubled receptive field for offline prediction",
         "mlp": "Simple MLP - baseline for comparison (no temporal modeling)",
     }
 
@@ -67,6 +68,7 @@ def get_model_recommendations() -> dict[str, list]:
         "best_accuracy": [
             "sparse_transformer_bigrcu",
             "mstcn",
+            "mstcn_noncausal",
             "ttsnet",
             "atcn",
             "cata_tcn",
@@ -80,6 +82,7 @@ def get_model_recommendations() -> dict[str, list]:
         "long_sequences": [
             "sparse_transformer_bigrcu",
             "mstcn",
+            "mstcn_noncausal",
             "ttsnet",
             "atcn",
             "mdfa",
