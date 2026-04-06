@@ -18,6 +18,7 @@ from src.models import cnn  # noqa: F401
 from src.models import hybrid  # noqa: F401
 from src.models import rnn  # noqa: F401
 from src.models import sota  # noqa: F401
+from src.models import uncertainty_mstcn  # noqa: F401
 
 
 def get_model(
@@ -56,6 +57,7 @@ def get_model_info() -> dict[str, str]:
         "atcn": "ATCN - Attention-based TCN with ISA and squeeze-excitation (2023 SOTA)",
         "sparse_transformer_bigrcu": "Sparse Transformer+Bi-GRCU - LRLS attention, most recent (2025 SOTA)",
         "mstcn": "MSTCN - Multi-scale TCN with Global Fusion Attention (2024 SOTA)",
+        "uncertainty_mstcn": "Uncertainty-MSTCN - MSTCN with aleatoric uncertainty head, outputs mean + log-var, NLL loss",
         "mlp": "Simple MLP - baseline for comparison (no temporal modeling)",
     }
 

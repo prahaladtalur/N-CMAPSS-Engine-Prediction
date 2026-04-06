@@ -17,6 +17,26 @@ def asymmetric_mse(alpha: float = 2.0):
     return loss
 
 
+def nll_loss():
+    """Negative log-likelihood loss for dual-output uncertainty models.
+
+    Model output is expected to be shape (batch, 2): [mean, log_var]
+    y_true is shape (batch, 1) or (batch,)
+    Loss = 0.5 * (log_var + (y_true - mean)^2 / exp(log_var))
+    """
+
+    def loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        mean = y_pred[:, 0:1]
+        log_var = y_pred[:, 1:2]
+        # Clamp log_var for numerical stability
+        log_var = tf.clip_by_value(log_var, -10.0, 10.0)
+        var = tf.exp(log_var)
+        y_true_flat = tf.reshape(y_true, tf.shape(mean))
+        return tf.reduce_mean(0.5 * (log_var + tf.square(y_true_flat - mean) / var))
+
+    return loss
+
+
 def get_loss_function(loss_name: str = "asymmetric_mse", loss_alpha: float = 2.0):
     """Resolve a configured training loss."""
     losses = {
@@ -25,6 +45,7 @@ def get_loss_function(loss_name: str = "asymmetric_mse", loss_alpha: float = 2.0
         "mae": keras.losses.MeanAbsoluteError(),
         "huber": keras.losses.Huber(),
         "log_cosh": keras.losses.LogCosh(),
+        "nll": nll_loss(),
     }
     if loss_name not in losses:
         available = ", ".join(sorted(losses))
