@@ -70,6 +70,7 @@ class TestModelRegistry:
             "atcn",
             "sparse_transformer_bigrcu",
             "mstcn",
+            "star_transformer",
         }
         assert expected.issubset(registered), f"Missing models: {expected - registered}"
 
