@@ -102,6 +102,19 @@ def normalized_rmse(y_true: np.ndarray, y_pred: np.ndarray, y_min: float, y_max:
     return np.sqrt(mean_squared_error(y_true_norm, y_pred_norm))
 
 
+def normalized_rmse_fixed(y_true: np.ndarray, y_pred: np.ndarray, max_rul: float) -> float:
+    """
+    Calculate normalized RMSE with an explicit dataset/paper denominator.
+
+    Use this when comparing against papers that define normalization by a
+    fixed maximum RUL, such as 125 for many C-MAPSS experiments. This avoids
+    silently comparing metrics that used different denominators.
+    """
+    if max_rul == 0:
+        return 0.0
+    return np.sqrt(mean_squared_error(y_true / max_rul, y_pred / max_rul))
+
+
 def normalized_mae(y_true: np.ndarray, y_pred: np.ndarray, y_min: float, y_max: float) -> float:
     """
     Calculate MAE on normalized RUL values (scaled to [0, 1]).
@@ -125,11 +138,21 @@ def normalized_mae(y_true: np.ndarray, y_pred: np.ndarray, y_min: float, y_max: 
     return mean_absolute_error(y_true_norm, y_pred_norm)
 
 
+def normalized_mae_fixed(y_true: np.ndarray, y_pred: np.ndarray, max_rul: float) -> float:
+    """
+    Calculate normalized MAE with an explicit dataset/paper denominator.
+    """
+    if max_rul == 0:
+        return 0.0
+    return mean_absolute_error(y_true / max_rul, y_pred / max_rul)
+
+
 def compute_all_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     y_min: float = None,
     y_max: float = None,
+    max_rul: float = None,
 ) -> Dict[str, float]:
     """
     Compute all RUL evaluation metrics.
@@ -139,6 +162,7 @@ def compute_all_metrics(
         y_pred: Predicted RUL values
         y_min: Minimum RUL for normalization (optional)
         y_max: Maximum RUL for normalization (optional)
+        max_rul: Fixed denominator for paper-style normalized metrics (optional)
 
     Returns:
         Dictionary with all metrics
@@ -161,6 +185,10 @@ def compute_all_metrics(
     if y_min is not None and y_max is not None:
         metrics["rmse_normalized"] = normalized_rmse(y_true, y_pred, y_min, y_max)
         metrics["mae_normalized"] = normalized_mae(y_true, y_pred, y_min, y_max)
+
+    if max_rul is not None:
+        metrics["rmse_normalized_fixed"] = normalized_rmse_fixed(y_true, y_pred, max_rul)
+        metrics["mae_normalized_fixed"] = normalized_mae_fixed(y_true, y_pred, max_rul)
 
     return metrics
 

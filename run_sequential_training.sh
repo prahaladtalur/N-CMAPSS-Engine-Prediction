@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e
 
-export WANDB_MODE=offline
-
 models=("transformer" "inception_lstm" "cnn_gru")
 
 for model in "${models[@]}"; do

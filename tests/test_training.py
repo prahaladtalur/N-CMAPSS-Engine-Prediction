@@ -188,6 +188,95 @@ class TestTargetTransforms:
             self.transform_targets(np.array([1.0], dtype=np.float32), scaling="zscore")
 
 
+class TestAccuracyHelpers:
+    """Test accuracy-oriented helper functions."""
+
+    @pytest.fixture(autouse=True)
+    def _import(self):
+        from train_model import (
+            add_sota_summary_metrics,
+            apply_prediction_calibrator,
+            apply_prediction_postprocessing,
+            compute_sample_weights,
+            fit_prediction_calibrator,
+            get_accuracy_recipe_config,
+            should_log_sota_gap,
+        )
+
+        self.add_sota_summary_metrics = add_sota_summary_metrics
+        self.apply_prediction_calibrator = apply_prediction_calibrator
+        self.apply_prediction_postprocessing = apply_prediction_postprocessing
+        self.compute_sample_weights = compute_sample_weights
+        self.fit_prediction_calibrator = fit_prediction_calibrator
+        self.get_accuracy_recipe_config = get_accuracy_recipe_config
+        self.should_log_sota_gap = should_log_sota_gap
+
+    def test_best_accuracy_recipe_contains_core_controls(self):
+        recipe = self.get_accuracy_recipe_config("best")
+        assert recipe["max_sequence_length"] == 1000
+        assert recipe["loss_name"] == "asymmetric_huber"
+        assert recipe["prediction_clip"] == "train_range"
+        assert recipe["calibration_method"] == "linear"
+
+    def test_low_rul_sample_weighting_emphasizes_near_failure(self):
+        y = np.array([0.0, 50.0, 100.0], dtype=np.float32)
+        weights = self.compute_sample_weights(y, mode="low_rul", strength=1.0, power=2.0)
+        assert weights is not None
+        assert weights[0] > weights[-1]
+        assert np.mean(weights) == pytest.approx(1.0)
+
+    def test_prediction_postprocessing_clips_to_train_range(self):
+        y_pred = np.array([-5.0, 50.0, 150.0], dtype=np.float32)
+        clipped = self.apply_prediction_postprocessing(
+            y_pred,
+            clip_mode="train_range",
+            y_min=0.0,
+            y_max=125.0,
+        )
+        assert np.array_equal(clipped, np.array([0.0, 50.0, 125.0], dtype=np.float32))
+
+    def test_linear_calibrator_corrects_simple_bias(self):
+        y_pred = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        y_true = np.array([15.0, 25.0, 35.0], dtype=np.float32)
+        calibrator = self.fit_prediction_calibrator(y_true, y_pred, method="linear")
+        calibrated = self.apply_prediction_calibrator(y_pred, calibrator)
+        assert np.allclose(calibrated, y_true, atol=1e-4)
+
+    def test_sota_gap_is_skipped_for_cross_dataset_comparison(self):
+        assert not self.should_log_sota_gap({"dataset": "ncmapss", "sota_target_dataset": "cmapss"})
+        assert self.should_log_sota_gap({"dataset": "cmapss", "sota_target_dataset": "cmapss"})
+
+    def test_sota_summary_gap_is_skipped_for_cross_dataset_comparison(self):
+        summary = {}
+        metrics = {"rmse_normalized": 0.10, "mae_normalized": 0.08}
+
+        self.add_sota_summary_metrics(
+            summary,
+            metrics,
+            {"dataset": "ncmapss", "sota_target_dataset": "cmapss"},
+        )
+
+        assert summary["results/best_rmse_normalized"] == pytest.approx(0.10)
+        assert summary["results/best_mae_normalized"] == pytest.approx(0.08)
+        assert summary["results/sota_gap_skipped"] == 1
+        assert "results/rmse_norm_gap_vs_sota" not in summary
+        assert "results/mae_norm_gap_vs_sota" not in summary
+
+    def test_sota_summary_gap_is_logged_for_same_dataset_comparison(self):
+        summary = {}
+        metrics = {"rmse_normalized": 0.064, "mae_normalized": 0.052}
+
+        self.add_sota_summary_metrics(
+            summary,
+            metrics,
+            {"dataset": "cmapss", "sota_target_dataset": "cmapss"},
+        )
+
+        assert summary["results/rmse_norm_gap_vs_sota"] == pytest.approx(2.0)
+        assert summary["results/mae_norm_gap_vs_sota"] == pytest.approx(2.0)
+        assert "results/sota_gap_skipped" not in summary
+
+
 class TestJsonSafety:
     """Test JSON-safe serialization helpers used by training outputs."""
 
@@ -200,9 +289,7 @@ class TestJsonSafety:
     def test_make_json_safe_converts_nested_numpy_scalars(self, tmp_path):
         payload = {
             "metrics_mean": {"rmse_normalized": np.float32(0.1107)},
-            "per_seed": {
-                "42": {"rmse_normalized": np.float32(0.1124), "best_epoch": np.int64(13)}
-            },
+            "per_seed": {"42": {"rmse_normalized": np.float32(0.1124), "best_epoch": np.int64(13)}},
         }
 
         safe_payload = self.make_json_safe(payload)

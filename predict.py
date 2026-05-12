@@ -26,6 +26,8 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from src.data.load_data import get_datasets
+from src.models.cata_tcn import ChannelAttention1D, ResidualTCNBlock, TemporalAttention1D
+from src.models.mstcn import GlobalFusionAttention, TemporalAttentionPooling
 from src.utils.metrics import compute_all_metrics, format_metrics
 
 
@@ -38,6 +40,7 @@ class RULPredictor:
         config_path: Optional[str] = None,
         ensemble: bool = False,
         model_paths: Optional[List[str]] = None,
+        ensemble_weights: Optional[List[float]] = None,
     ):
         """
         Initialize predictor with trained model(s).
@@ -51,26 +54,28 @@ class RULPredictor:
         self.ensemble = ensemble
         self.model_specs: List[Dict[str, Any]] = []
         self.model_names = []
-        self.ensemble_weights = [0.5, 0.3, 0.2]  # Based on benchmark rankings
+        self.ensemble_weights: List[float] = []
 
         if ensemble:
             # Use top 3 models from benchmark
-            default_ensemble = model_paths or [
-                "models/production/mstcn_model.keras",
-                "models/production/transformer_model.keras",
-                "models/production/wavenet_model.keras",
-            ]
-            for path in default_ensemble:
+            default_ensemble, metadata_weights = self._load_ensemble_definition(model_paths)
+            candidate_weights = ensemble_weights or metadata_weights
+            loaded_weights = []
+            for idx, path in enumerate(default_ensemble):
                 if Path(path).exists():
                     spec = self._load_model_spec(path)
                     self.model_specs.append(spec)
                     self.model_names.append(spec["name"])
+                    loaded_weights.append(
+                        candidate_weights[idx] if idx < len(candidate_weights) else 1.0
+                    )
                     print(f"✓ Loaded: {Path(path).name}")
                 else:
                     print(f"⚠️  Model not found: {path}")
 
             if not self.model_specs:
                 raise FileNotFoundError("No ensemble models found. Train models first.")
+            self.ensemble_weights = self._normalize_weights(loaded_weights)
         else:
             if model_path is None:
                 raise ValueError("model_path required when ensemble=False")
@@ -105,6 +110,46 @@ class RULPredictor:
 
         self.eval_clip_value = next(iter(clip_values)) if len(clip_values) == 1 else None
 
+    def _load_ensemble_definition(
+        self, model_paths: Optional[List[str]]
+    ) -> Tuple[List[str], List[float]]:
+        if model_paths:
+            return model_paths, [1.0] * len(model_paths)
+
+        production_dir = Path("models/production")
+        metadata_path = production_dir / "ensemble_metadata.json"
+        if metadata_path.exists():
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+            models = metadata.get("models", [])
+            paths = [
+                str(production_dir / model.get("model_file", f"{model['name']}_model.keras"))
+                for model in models
+                if "name" in model
+            ]
+            weights = [float(model.get("weight", 1.0)) for model in models if "name" in model]
+            if paths:
+                return paths, weights
+
+        return (
+            [
+                "models/production/mstcn_model.keras",
+                "models/production/transformer_model.keras",
+                "models/production/wavenet_model.keras",
+            ],
+            [0.5, 0.3, 0.2],
+        )
+
+    @staticmethod
+    def _normalize_weights(weights: List[float]) -> List[float]:
+        if not weights:
+            return []
+        clipped = [max(float(weight), 0.0) for weight in weights]
+        total = sum(clipped)
+        if total <= 0:
+            return [1.0 / len(clipped)] * len(clipped)
+        return [weight / total for weight in clipped]
+
     @staticmethod
     def _asymmetric_mse(alpha: float = 2.0):
         """Asymmetric MSE loss for model loading."""
@@ -123,7 +168,17 @@ class RULPredictor:
 
     def _load_model_spec(self, model_path: str) -> Dict[str, Any]:
         model_dir = str(Path(model_path).parent)
-        model = tf.keras.models.load_model(model_path, custom_objects={"loss": self._asymmetric_mse()})
+        model = tf.keras.models.load_model(
+            model_path,
+            custom_objects={
+                "loss": self._asymmetric_mse(),
+                "GlobalFusionAttention": GlobalFusionAttention,
+                "TemporalAttentionPooling": TemporalAttentionPooling,
+                "ResidualTCNBlock": ResidualTCNBlock,
+                "ChannelAttention1D": ChannelAttention1D,
+                "TemporalAttention1D": TemporalAttention1D,
+            },
+        )
 
         config_path = os.path.join(model_dir, "config.json")
         config = self._load_json_or_default(config_path, {"max_sequence_length": 1000})
@@ -143,6 +198,8 @@ class RULPredictor:
             "scaling": "none",
             "scale_min": None,
             "scale_max": None,
+            "prediction_clip": "none",
+            "prediction_calibration": {"method": "none"},
         }
         y_min = None
         y_max = None
@@ -157,6 +214,10 @@ class RULPredictor:
                     "scaling": rul_scaler.get("target_scaling") or "none",
                     "scale_min": rul_scaler.get("scale_min"),
                     "scale_max": rul_scaler.get("scale_max"),
+                    "prediction_clip": rul_scaler.get("prediction_clip", "none"),
+                    "prediction_calibration": rul_scaler.get(
+                        "prediction_calibration", {"method": "none"}
+                    ),
                 }
             )
             print(f"✓ RUL scaler loaded from: {rul_scaler_path}")
@@ -182,6 +243,40 @@ class RULPredictor:
         if scale_min is None or scale_max is None:
             return value
         return value * (scale_max - scale_min) + scale_min
+
+    @staticmethod
+    def _apply_prediction_calibration(value: float, calibration: Dict[str, Any]) -> float:
+        method = calibration.get("method", "none")
+        if method == "bias":
+            return value + float(calibration.get("offset", 0.0))
+        if method == "linear":
+            return value * float(calibration.get("slope", 1.0)) + float(
+                calibration.get("intercept", 0.0)
+            )
+        return value
+
+    @staticmethod
+    def _clip_prediction(value: float, spec: Dict[str, Any]) -> float:
+        clip_mode = spec["target_transform"].get("prediction_clip", "none")
+        if clip_mode == "none":
+            return value
+        if clip_mode == "nonnegative":
+            return max(value, 0.0)
+        if clip_mode == "train_range":
+            y_min = spec.get("y_min")
+            y_max = spec.get("y_max")
+            if y_min is None or y_max is None:
+                return max(value, 0.0)
+            return float(np.clip(value, y_min, y_max))
+        return value
+
+    def _postprocess_prediction(self, value: float, spec: Dict[str, Any]) -> float:
+        value = self._clip_prediction(value, spec)
+        value = self._apply_prediction_calibration(
+            value,
+            spec["target_transform"].get("prediction_calibration", {"method": "none"}),
+        )
+        return self._clip_prediction(value, spec)
 
     def _prepare_single(
         self,
@@ -225,6 +320,7 @@ class RULPredictor:
             X = self._prepare_single(sequence, spec["max_seq_length"], spec["scaler"])
             pred = float(spec["model"].predict(X, verbose=0)[0, 0])
             pred = self._inverse_transform_prediction(pred, spec["target_transform"])
+            pred = self._postprocess_prediction(pred, spec)
             predictions.append(pred)
             individual_preds[spec["name"]] = pred
 
@@ -238,7 +334,9 @@ class RULPredictor:
             "prediction": final_pred,
             "individual_predictions": individual_preds,
             "std_dev": np.std(predictions) if len(predictions) > 1 else 0.0,
-            "confidence": self._calculate_confidence(predictions) if len(predictions) > 1 else "N/A",
+            "confidence": (
+                self._calculate_confidence(predictions) if len(predictions) > 1 else "N/A"
+            ),
         }
 
     def _calculate_confidence(self, predictions: List[float]) -> str:
@@ -363,6 +461,12 @@ Examples:
         action="store_true",
         help="Use ensemble of top 3 models (MSTCN + Transformer + WaveNet)",
     )
+    parser.add_argument(
+        "--ensemble-weights",
+        type=str,
+        default=None,
+        help="Comma-separated ensemble weights, e.g. 0.5,0.3,0.2",
+    )
     parser.add_argument("--fd", type=int, default=1, help="N-CMAPSS sub-dataset (1-7)")
     parser.add_argument(
         "--unit-id", type=int, default=None, help="Predict specific test unit (default: all)"
@@ -378,10 +482,24 @@ Examples:
     if not args.model_path and not args.ensemble:
         parser.error("Either --model-path or --ensemble required")
 
+    ensemble_weights = None
+    if args.ensemble_weights:
+        try:
+            ensemble_weights = [float(value) for value in args.ensemble_weights.split(",")]
+        except ValueError as exc:
+            parser.error(f"Invalid --ensemble-weights: {exc}")
+
     if args.ensemble:
-        print("\n🔮 Ensemble Mode: Using top 3 models (MSTCN, Transformer, WaveNet)")
-        print("Ensemble weights: 50% MSTCN, 30% Transformer, 20% WaveNet\n")
-        predictor = RULPredictor(ensemble=True)
+        print("\n🔮 Ensemble Mode: Using configured production models")
+        predictor = RULPredictor(ensemble=True, ensemble_weights=ensemble_weights)
+        print(
+            "Ensemble weights: "
+            + ", ".join(
+                f"{name}={weight:.3f}"
+                for name, weight in zip(predictor.model_names, predictor.ensemble_weights)
+            )
+            + "\n"
+        )
     else:
         predictor = RULPredictor(model_path=args.model_path, config_path=args.config_path)
 

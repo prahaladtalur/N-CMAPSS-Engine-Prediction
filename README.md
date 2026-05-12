@@ -1,229 +1,171 @@
 # N-CMAPSS Engine RUL Prediction
 
-Predict remaining useful life (RUL) for NASA's turbofan engines with a single, opinionated pipeline. The repository now revolves around **one data loader, one training entry point, and one set of utilities**, so you can find what you need without bouncing between duplicate modules or docs.
+Research-grade remaining useful life (RUL) prediction for NASA turbofan engines.
 
-🏆 **Best Model**: **MSTCN** (Multi-Scale Temporal Convolutional Network) achieves **RMSE 6.80, R² 0.90** - the best among 20 evaluated architectures. [Read the full analysis →](FINAL_ANALYSIS_REPORT.md) | [Understand MSTCN →](MSTCN_EXPLAINED.md)
+This repository is built around a single reproducible training pipeline for the N-CMAPSS dataset: one data loader, one CLI, one model registry, one metrics stack, and W&B logging for every serious run. The goal is simple: compare modern time-series architectures under controlled conditions and close the gap to published N-CMAPSS results.
 
-🔮 **NEW: Ensemble Predictions** - Combine MSTCN + Transformer + WaveNet for 10-15% better accuracy (expected RMSE ~6.5). [Ensemble Guide →](ENSEMBLE_GUIDE.md)
+## Current Results
 
-## Workflow at a Glance
+| Claim | Model | Split / Protocol | RMSE | R2 | Accuracy@20 | Evidence |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| Best historical tuned run | CNN-GRU + asymmetric loss | FD1, tuned recipe | **6.44** | **0.91** | **99.1%** | [EXPERIMENTS.md](EXPERIMENTS.md) |
+| Best fair FD1 benchmark | WaveNet | 30 epochs, seq=1000, batch=32 | **6.523** | **0.9086** | **98.83%** | [FD1 report](benchmark_results/apples_to_apples/fd1_ep30_len1000_20260425_090057/report.md) |
+| Best fair FD2 benchmark | MSTCN | 30 epochs, seq=1000, batch=32 | **6.495** | **0.8897** | **99.01%** | [FD2 report](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md) |
+| Best FD2 threshold accuracy | WaveNet | 30 epochs, seq=1000, batch=32 | 6.739 | 0.8813 | **99.50%** | [FD2 report](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md) |
+
+The closest verified published reference we found reports **RMSE 6.20** on N-CMAPSS DS02. Under the repo's FD2 apples-to-apples check, **MSTCN is 0.295 RMSE away, or about 4.8%**. That is the most defensible current paper-gap number in this repository.
+
+Paper reference: Jean-Pierre et al., PHM Society, "LSTM and Transformers based methods for Remaining Useful Life prediction considering censored data" ([PDF](https://papers.phmsociety.org/index.php/ijphm/article/download/4260/2619)).
+
+W&B project for the current controlled benchmarks: [n-cmapss-a2a](https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a)
+
+## What This Repo Does
+
+- Downloads and caches N-CMAPSS splits through `src/data/load_data.py`.
+- Trains 20 registered neural architectures through `train_model.py`.
+- Logs metrics, configs, plots, and benchmark summaries to Weights & Biases.
+- Computes RUL-specific metrics: RMSE, MAE, R2, PHM score, asymmetric loss, Accuracy@10/15/20, and normalized RMSE.
+- Provides strict apples-to-apples harnesses for comparing top models under the same split, training budget, loss, and metric denominator.
+
+## Quick Start
 
 ```bash
-# 1) Install everything (creates a virtual env if needed)
 pip install uv
 uv sync
 
-# 2) Train a model (dataset downloads/caches automatically on first run)
-python train_model.py --model lstm --epochs 30
-
-# 3) Compare architectures when you're ready
-python train_model.py --compare --models lstm gru transformer
+python train_model.py --list-models
+python train_model.py --model mstcn --fd 1 --epochs 30 --max-seq-length 1000
 ```
 
-The CLI handles:
-- downloading & caching any FD00X split through `src/data/load_data.py`
-- preparing sequences, normalization, wandb logging, and result plots via `train_model.py`
-- switching among all registered architectures exposed through `src/models/` with a compatibility shim at `src/models/architectures.py`
+Runs log to W&B online by default when you are logged in. Use `WANDB_MODE=offline` only for local-only experiments.
 
-## Feature Highlights
+## Reproduce The Main Benchmarks
 
-- **Single source of truth for data** – `src/data/load_data.py` sets up RUL datasets and returns `(dev, val, test)` splits ready for modeling.
-- **Curated model zoo** – `src/models/` organizes LSTM/GRU variants, CNN hybrids, TCN/WaveNet blocks, and Transformer-style models by category; use `train_model.py --list-models` to inspect names.
-- **Consistent training loop** – `train_model.py` is the main CLI entry point, while `src/models` exposes `train_model(...)`, `compare_models(...)`, and `prepare_sequences(...)` through the package API.
-- **Evaluation utilities** – Metrics (`src/utils/metrics.py`) and visualization helpers (`src/utils/training_viz.py`, `src/utils/visualize.py`) cover both dataset analysis and post-training reporting.
+FD1 controlled benchmark:
+
+```bash
+python scripts/benchmark_apples_to_apples.py \
+  --fd 1 \
+  --epochs 30 \
+  --max-sequence-length 1000 \
+  --batch-size 32 \
+  --patience-early-stop 6 \
+  --patience-lr-reduce 3 \
+  --fixed-metric-max-rul 125 \
+  --models wavenet cnn_gru mstcn
+```
+
+FD2 / DS02-style controlled benchmark:
+
+```bash
+python scripts/benchmark_apples_to_apples.py \
+  --fd 2 \
+  --epochs 30 \
+  --max-sequence-length 1000 \
+  --batch-size 32 \
+  --patience-early-stop 6 \
+  --patience-lr-reduce 3 \
+  --fixed-metric-max-rul 125 \
+  --models wavenet cnn_gru mstcn
+```
+
+Each run writes `results.csv`, `results.json`, and `report.md` under `benchmark_results/apples_to_apples/`, and each model run is logged to W&B.
+
+## Why The Apples-To-Apples Harness Matters
+
+RUL papers often differ in dataset subset, censoring, windowing, target clipping, target scaling, sensor selection, normalization, and metric denominator. Small protocol differences can produce large apparent gains.
+
+The apples-to-apples benchmark controls the parts we can control locally:
+
+| Control | Current setting |
+| --- | --- |
+| Dataset selector | `--fd 1` or `--fd 2` |
+| Epoch budget | `30` |
+| Sequence length | `1000` |
+| Batch size | `32` |
+| Loss | `asymmetric_mse`, alpha `2.0` |
+| Optimizer | Adam |
+| Metric denominator | fixed max RUL `125` for normalized RMSE |
+| Model set | WaveNet, CNN-GRU, MSTCN |
+
+Use the fair benchmark tables for paper claims. Use historical tuned results for engineering direction and ablation discussion.
+
+## Model Zoo
+
+Run `python train_model.py --list-models` for the current registry.
+
+| Family | Models |
+| --- | --- |
+| Convolutional / temporal CNN | `mstcn`, `atcn`, `cata_tcn`, `ttsnet`, `tcn`, `wavenet` |
+| Attention | `transformer`, `attention_lstm`, `mdfa`, `cnn_lstm_attention` |
+| Hybrid CNN-RNN | `cnn_gru`, `cnn_lstm`, `inception_lstm`, `resnet_lstm` |
+| Recurrent | `lstm`, `bilstm`, `gru`, `bigru` |
+| Baseline | `mlp` |
+
+## Metrics
+
+| Metric | Meaning |
+| --- | --- |
+| RMSE | Main error metric in cycles. Lower is better. |
+| MAE | Mean absolute error in cycles. Lower is better. |
+| R2 | Variance explained by the model. Higher is better. |
+| PHM score | Safety-oriented score that penalizes late predictions more heavily. Lower is better. |
+| Accuracy@N | Share of predictions within +/- N cycles. Higher is better. |
+| RMSE(norm,fixed) | RMSE divided by a fixed denominator, currently `125`, for consistent internal paper-style comparison. |
+
+Do not compare normalized RMSE numbers across papers unless the denominator and preprocessing are the same.
+
+## W&B
+
+The main benchmark project is:
+
+```text
+https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a
+```
+
+Useful runs:
+
+| Run | Model | Split | Link |
+| --- | --- | --- | --- |
+| `kxzt7837` | WaveNet | FD1 | https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a/runs/kxzt7837 |
+| `p3id5hq0` | MSTCN | FD2 | https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a/runs/p3id5hq0 |
+| `79nsc4w1` | WaveNet | FD2 | https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a/runs/79nsc4w1 |
+
+When reading W&B:
+
+- Use `Summary` for final test metrics.
+- Use `Charts` for convergence and overfitting.
+- Use `Config` to verify whether two runs are actually comparable.
+- Use benchmark summary runs and local reports for paper tables.
 
 ## Project Layout
 
-```
+```text
 N-CMAPSS-Engine-Prediction
 ├── src/
-│   ├── data/                # dataset download & caching
-│   ├── models/              # model registry + training pipeline
+│   ├── data/                # dataset download, cache, split loading
+│   ├── models/              # model registry and architectures
 │   └── utils/               # metrics and visualization helpers
-├── train_model.py           # main CLI (use this)
-├── scripts/                 # comparison + reporting helpers
-├── pyproject.toml / uv.lock
+├── train_model.py           # main training CLI
+├── predict.py               # inference CLI and RULPredictor API
+├── scripts/                 # benchmark, tuning, and reporting helpers
+├── benchmark_results/       # reproducible benchmark outputs
+├── pyproject.toml
+└── uv.lock
 ```
 
-## Key Commands
-
-| Command | Why you run it |
-| --- | --- |
-| `python train_model.py --list-models` | View every registered architecture with short descriptions |
-| `python train_model.py --model <name> [--epochs 50 --units 128 ...]` | Train one model with custom hyperparameters |
-| `python train_model.py --compare --models lstm gru tcn` | Fit multiple architectures back-to-back and write comparison plots under `results/comparison/` |
-| `python scripts/tune_for_sota.py --experiment issue25_recipe --models mstcn transformer wavenet --fd 1 --offline` | Run the issue-25 benchmark recipe around clipping, target scaling, Huber loss, and gradient clipping |
-| `python scripts/prepare_ensemble.py` | **NEW:** Prepare ensemble models (MSTCN + Transformer + WaveNet) |
-| `python predict.py --ensemble --fd 1` | **NEW:** Run ensemble predictions for maximum accuracy |
-| `python scripts/compare_saved_runs.py` | Build a comparison plot from saved runs (no retraining) |
-| `python scripts/make_best_model_summary.py` | Create a single summary image for the best model |
-
-All commands accept `--fd 1..7` to switch datasets. Feature normalization and visual outputs can be toggled with `--no-normalize` / `--no-visualize` during training.
-
-If you only remember one thing: run `python train_model.py --model lstm` to bootstrap everything. From there you can branch into comparisons, more advanced architectures, or the visualization suite without relearning new entry points.
-
-## Evaluation Metrics
-
-The project tracks comprehensive metrics for RUL prediction, including both standard regression metrics and domain-specific RUL metrics. All metrics are automatically logged to Weights & Biases for experiment tracking.
-
-### Standard Regression Metrics
-
-| Metric | Description | Interpretation |
-|--------|-------------|----------------|
-| **MSE** | Mean Squared Error | Average squared difference between predictions and true values. Lower is better. |
-| **RMSE** | Root Mean Squared Error | Square root of MSE, in same units as RUL (cycles). Lower is better. Typical range: 5-15 cycles for good models. |
-| **MAE** | Mean Absolute Error | Average absolute difference between predictions and true values. Lower is better. More interpretable than RMSE. |
-| **MAPE** | Mean Absolute Percentage Error | Percentage error relative to true values. Lower is better. Useful for understanding relative accuracy. |
-| **R² Score** | Coefficient of Determination | Proportion of variance explained by the model. Range: [0, 1], higher is better. >0.90 is excellent. |
-
-### RUL-Specific Metrics
-
-| Metric | Description | Interpretation |
-|--------|-------------|----------------|
-| **PHM Score** | PHM Society Challenge scoring function | Asymmetric penalty: late predictions (predicting failure after actual) penalized more heavily than early predictions. Lower is better, 0 = perfect. |
-| **Asymmetric Loss** | Custom loss with α penalty for late predictions | Penalizes late predictions by factor α (default 2.0). Used during training to improve safety. Lower is better. |
-| **Accuracy@N** | Percentage of predictions within ±N cycles | Practical metric: % of predictions within acceptable threshold. Typical thresholds: 10, 15, 20 cycles. Higher is better. |
-
-### Normalized Metrics (Paper Comparison)
-
-To enable fair comparison with published research, we also compute **normalized metrics** by scaling RUL values to [0, 1]:
-
-| Metric | Description | SOTA Benchmark (MDFA Paper) |
-|--------|-------------|------------------------------|
-| **RMSE (normalized)** | RMSE on RUL scaled to [0, 1] | **0.021–0.032** (target) |
-| **MAE (normalized)** | MAE on RUL scaled to [0, 1] | **0.018–0.026** (target) |
-| **R² (normalized)** | R² on normalized values | **0.987–0.995** (target) |
-
-**Why normalize?** Different papers use different RUL ranges (max RUL varies by dataset). Normalizing to [0, 1] allows direct comparison across studies. A normalized RMSE of 0.03 means predictions are off by ~3% of the full RUL range.
-
-**Current Best:** Our **MSTCN model** achieves:
-- **RMSE**: 6.80 cycles (raw)
-- **RMSE (normalized)**: 0.1046
-- **R² Score**: 0.9006
-- **Accuracy@20**: 99.12%
-- **Gap from SOTA**: 3.27× (vs 0.032 target)
-
-This represents a **58% improvement** over the previous best (TCN at 16.13 RMSE). See [complete benchmark results](FINAL_ANALYSIS_REPORT.md) for all 20 models tested.
-
-### Understanding the Metrics
-
-**When is a model "good"?**
-- **RMSE < 10 cycles**: Good for practical use
-- **MAE < 8 cycles**: Consistently accurate predictions
-- **R² > 0.90**: Model explains >90% of variance
-- **Accuracy@20 > 95%**: Most predictions within acceptable range
-- **RMSE_norm < 0.05**: Approaching research SOTA
-
-**Why PHM Score and Asymmetric Loss?**
-In predictive maintenance, **late predictions are more dangerous** than early ones:
-- **Early prediction** (predict failure at cycle 90, actual failure at cycle 100): Unnecessary maintenance, but safe
-- **Late prediction** (predict failure at cycle 110, actual failure at cycle 100): Catastrophic failure, unsafe
-
-PHM Score and Asymmetric Loss mathematically encode this safety preference by penalizing late predictions more heavily.
-
-### Metrics in Weights & Biases
-
-All metrics are automatically logged to W&B with the following structure:
-
-```
-test/rmse                    # Raw RMSE (cycles)
-test/mae                     # Raw MAE (cycles)
-test/r2                      # R² score
-test/rmse_normalized         # Normalized RMSE [0, 1]
-test/mae_normalized          # Normalized MAE [0, 1]
-test/rmse_normalized_gap     # Gap from SOTA (multiplier)
-test/mae_normalized_gap      # Gap from SOTA (multiplier)
-test/phm_score_normalized    # Per-sample PHM score
-test/accuracy_10             # Accuracy within ±10 cycles
-test/accuracy_20             # Accuracy within ±20 cycles
-
-sota/rmse_normalized_target  # SOTA benchmark (0.032)
-sota/mae_normalized_target   # SOTA benchmark (0.026)
-
-charts/training_history      # Loss & MAE over epochs
-charts/predictions           # True vs predicted scatter plot
-charts/error_distribution    # Histogram of prediction errors
-
-predictions_table            # Interactive table with 500 sample predictions
-```
-
-**Run Summary:** Each W&B run includes comprehensive metadata (model architecture, parameters, dataset info, training config) for easy filtering and comparison.
-
-## Comprehensive Model Benchmark
-
-We evaluated **20 neural network architectures** on the N-CMAPSS FD1 dataset. Here are the top performers:
-
-| Rank | Model | RMSE | R² | Type | Year |
-|------|-------|------|-----|------|------|
-| 🥇 1 | **MSTCN** | **6.80** | **0.90** | Multi-scale CNN + Attention | 2024 |
-| 🥈 2 | Transformer | 6.82 | 0.90 | Self-attention | 2017 |
-| 🥉 3 | WaveNet | 6.84 | 0.90 | Gated dilated CNN | 2016 |
-| 4 | ATCN | 7.01 | 0.89 | Attention + TCN | 2023 |
-| 5 | CATA-TCN | 7.38 | 0.88 | Dual attention TCN | 2024 |
-| 6 | TTSNet | 8.15 | 0.86 | Hybrid ensemble | 2024 |
-| 7 | MDFA | 14.33 | 0.56 | Multi-scale dilated fusion | 2024 |
-| 8 | TCN | 16.13 | 0.44 | Temporal CNN | 2018 |
-| ... | Traditional RNNs | 22+ | <0 | LSTM/GRU variants | Classic |
-
-📊 **Key Findings**:
-- **MSTCN wins** by large margin (58% better than TCN)
-- **Top 3 models** are within 1% of each other
-- **Sequence length matters**: 1,000 steps >> 20,000 steps (counterintuitive!)
-- **Traditional RNNs fail**: All had negative R² scores
-
-📖 **Read More**:
-- [Complete Benchmark Report](FINAL_ANALYSIS_REPORT.md) - Full analysis of all 20 models
-- [MSTCN Deep Dive](MSTCN_EXPLAINED.md) - How the winner works
-- [Training Comparison](FINAL_RESULTS_COMPARISON.md) - 30 vs 100 epoch analysis
-
-### Available Models
-
-**20 architectures ready to use** with `--model <name>`:
-
-**Convolutional** (Best Category ⭐):
-- `mstcn` - Multi-Scale TCN + Global Fusion Attention (Winner!)
-- `atcn` - Attention-based TCN
-- `cata_tcn` - Channel + Temporal Attention TCN
-- `ttsnet` - Transformer + TCN + Self-Attention ensemble
-- `tcn` - Temporal Convolutional Network
-- `wavenet` - Gated dilated convolutions
-
-**Attention-Based**:
-- `transformer` - Multi-head self-attention (2nd best)
-- `attention_lstm` - LSTM with attention mechanism
-- `mdfa` - Multi-scale Dilated Fusion Attention
-- `cnn_lstm_attention` - CNN + LSTM + Attention hybrid
-
-**Hybrid Models**:
-- `cnn_lstm` - CNN feature extraction + LSTM temporal
-- `cnn_gru` - CNN + GRU (faster than CNN-LSTM)
-- `inception_lstm` - Multi-scale CNN + LSTM
-- `resnet_lstm` - Residual LSTM
-
-**Recurrent**:
-- `lstm`, `bilstm` - Standard & bidirectional LSTM
-- `gru`, `bigru` - Standard & bidirectional GRU
-
-**Baseline**:
-- `mlp` - Multi-layer perceptron (no temporal modeling)
-
-Use `python train_model.py --list-models` for descriptions.
-
-### Running Tests
-
-Metric calculations are validated with comprehensive unit tests:
+## Tests
 
 ```bash
-# Run all tests
 make test
-
-# Or directly with pytest
 pytest tests/test_metrics.py -v
 ```
 
-Tests cover:
-- Perfect predictions (all metrics should be 0 or optimal)
-- Known values (verify calculation correctness)
-- Edge cases (empty arrays, single samples, zero values)
-- PHM score asymmetry (late > early penalty)
-- Normalized metric scale invariance
+The metric tests cover perfect predictions, known values, edge cases, PHM score asymmetry, and normalized metric scale behavior.
+
+## Paper-Safe Summary
+
+Use this wording when describing the current result:
+
+> Under a controlled N-CMAPSS FD2 benchmark with 30 epochs, 1000-step windows, asymmetric MSE loss, and a fixed normalized-RMSE denominator of 125, MSTCN achieved RMSE 6.495, MAE 4.660, R2 0.890, and Accuracy@20 99.01%. This is within 0.295 RMSE, or 4.8%, of a verified published N-CMAPSS DS02 result of RMSE 6.20.
+

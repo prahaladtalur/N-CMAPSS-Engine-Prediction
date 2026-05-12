@@ -203,5 +203,5 @@ if __name__ == "__main__":
 
     except FileNotFoundError:
         print("\nModel not found. Train it first:")
-        print("  WANDB_MODE=offline python train_production_model.py")
+        print("  python train_production_model.py")
         print()

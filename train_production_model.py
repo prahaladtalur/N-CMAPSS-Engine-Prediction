@@ -165,9 +165,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Set W&B to offline mode
-    os.environ["WANDB_MODE"] = "offline"
-
     # Train and save model
     model_path = train_production_cnn_gru(
         output_dir=args.output_dir,

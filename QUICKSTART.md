@@ -28,7 +28,7 @@ python train_model.py --list-models
 
 ```bash
 # Train MSTCN (winner of our 20-model benchmark)
-WANDB_MODE=offline python train_model.py \
+python train_model.py \
   --model mstcn \
   --epochs 30 \
   --batch-size 64 \
@@ -42,7 +42,7 @@ WANDB_MODE=offline python train_model.py \
 1. ✅ Downloads N-CMAPSS FD1 dataset (~100MB, cached for future runs)
 2. ✅ Trains MSTCN model for 30 epochs with early stopping
 3. ✅ Generates training curves, prediction plots, error analysis
-4. ✅ Logs metrics to W&B (offline mode)
+4. ✅ Logs metrics to W&B
 
 **Expected results**:
 - RMSE: ~6.8-7.5 cycles
@@ -73,12 +73,11 @@ ls results/mstcn-run/
 
 ### W&B Dashboard
 ```bash
-# View detailed metrics
-wandb offline sync wandb/latest-run/
-
-# Or just explore the local files
-ls wandb/offline-run-*/
+# Open your W&B project in the browser
+wandb status
 ```
+
+If you want a local-only run instead, prefix the training command with `WANDB_MODE=offline`.
 
 ---
 
@@ -86,7 +85,7 @@ ls wandb/offline-run-*/
 
 ```bash
 # Compare top 3 models
-WANDB_MODE=offline python train_model.py \
+python train_model.py \
   --compare \
   --models mstcn transformer wavenet \
   --epochs 30 \
@@ -171,7 +170,9 @@ python train_model.py --model mstcn --batch-size 32 --max-seq-length 1000
 
 ### Issue: "W&B API key error"
 ```bash
-# Solution: Use offline mode
+# Solution: log in to W&B, or use offline mode only if you want a local-only run
+wandb login
+# Optional local-only fallback:
 WANDB_MODE=offline python train_model.py --model mstcn
 ```
 

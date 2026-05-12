@@ -15,6 +15,8 @@ from src.utils.metrics import (
     rul_accuracy,
     normalized_rmse,
     normalized_mae,
+    normalized_rmse_fixed,
+    normalized_mae_fixed,
     compute_all_metrics,
     format_metrics,
     compare_models,
@@ -243,6 +245,22 @@ class TestNormalizedMetrics:
 
         assert abs(rmse_1 - rmse_2) < 1e-6
 
+    def test_fixed_denominator_normalized_rmse(self):
+        """Fixed-denominator RMSE uses the explicit max_rul value."""
+        y_true = np.array([65.0])
+        y_pred = np.array([0.0])
+
+        assert normalized_rmse_fixed(y_true, y_pred, max_rul=65.0) == pytest.approx(1.0)
+        assert normalized_rmse_fixed(y_true, y_pred, max_rul=125.0) == pytest.approx(0.52)
+
+    def test_fixed_denominator_normalized_mae(self):
+        """Fixed-denominator MAE uses the explicit max_rul value."""
+        y_true = np.array([65.0])
+        y_pred = np.array([0.0])
+
+        assert normalized_mae_fixed(y_true, y_pred, max_rul=65.0) == pytest.approx(1.0)
+        assert normalized_mae_fixed(y_true, y_pred, max_rul=125.0) == pytest.approx(0.52)
+
 
 class TestComputeAllMetrics:
     """Test compute_all_metrics function."""
@@ -283,6 +301,16 @@ class TestComputeAllMetrics:
         assert "mae_normalized" in metrics
         assert np.isfinite(metrics["rmse_normalized"])
         assert np.isfinite(metrics["mae_normalized"])
+
+    def test_compute_all_metrics_with_fixed_denominator(self):
+        """Test compute_all_metrics includes fixed-denominator metrics when provided."""
+        y_true = np.array([65.0, 0.0])
+        y_pred = np.array([0.0, 0.0])
+
+        metrics = compute_all_metrics(y_true, y_pred, max_rul=125.0)
+
+        assert metrics["rmse_normalized_fixed"] == pytest.approx(np.sqrt((0.52**2) / 2))
+        assert metrics["mae_normalized_fixed"] == pytest.approx(0.26)
 
     def test_compute_all_metrics_without_normalization(self):
         """Test compute_all_metrics without normalization params."""

@@ -15,10 +15,10 @@ A production-ready CNN-GRU model that predicts Remaining Useful Life (RUL) of tu
 ### 1️⃣ Train the Model
 
 ```bash
-WANDB_MODE=offline python train_production_model.py
+python train_production_model.py
 ```
 
-This takes ~30-40 minutes and saves the model to `models/production/cnn_gru_best.keras`.
+This takes ~30-40 minutes, logs to W&B, and saves the model to `models/production/cnn_gru_best.keras`.
 
 ### 2️⃣ Run Predictions
 

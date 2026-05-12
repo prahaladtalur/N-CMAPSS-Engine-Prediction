@@ -19,6 +19,7 @@ Usage:
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -27,9 +28,25 @@ from typing import List, Dict
 
 def model_exists(model_name: str, production_dir: str = "models/production") -> bool:
     """Check if a trained model already exists."""
-    model_path = Path(production_dir) / f"{model_name}_model.keras"
-    metadata_path = Path(production_dir) / f"{model_name}_metadata.json"
-    return model_path.exists() and metadata_path.exists()
+    model_dir = Path(production_dir) / model_name
+    return (model_dir / "model.keras").exists()
+
+
+def promote_latest_checkpoint(model_name: str, production_dir: str = "models/production") -> bool:
+    """Copy the newest timestamped training checkpoint into a production subdirectory."""
+    checkpoints = sorted(Path("models").glob(f"{model_name}_*/model.keras"))
+    if not checkpoints:
+        print(f"⚠️  No timestamped checkpoint found for {model_name}")
+        return False
+
+    latest_model = max(checkpoints, key=lambda path: path.stat().st_mtime)
+    source_dir = latest_model.parent
+    target_dir = Path(production_dir) / model_name
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    shutil.copytree(source_dir, target_dir)
+    print(f"✓ Promoted checkpoint to: {target_dir}")
+    return True
 
 
 def train_model(
@@ -38,6 +55,7 @@ def train_model(
     batch_size: int = 64,
     max_seq_length: int = 1000,
     fd: int = 1,
+    accuracy_recipe: str = "none",
 ) -> bool:
     """
     Train a single model and save to production directory.
@@ -54,23 +72,30 @@ def train_model(
         "train_model.py",
         "--model",
         model_name,
-        "--epochs",
-        str(epochs),
-        "--batch-size",
-        str(batch_size),
-        "--max-seq-length",
-        str(max_seq_length),
         "--fd",
         str(fd),
     ]
+    if accuracy_recipe != "none":
+        cmd.extend(["--accuracy-recipe", accuracy_recipe])
+    else:
+        cmd.extend(
+            [
+                "--epochs",
+                str(epochs),
+                "--batch-size",
+                str(batch_size),
+                "--max-seq-length",
+                str(max_seq_length),
+            ]
+        )
 
     env = os.environ.copy()
-    env["WANDB_MODE"] = "offline"
 
     try:
         result = subprocess.run(cmd, env=env, check=True, capture_output=False)
+        promoted = promote_latest_checkpoint(model_name)
         print(f"\n✅ {model_name.upper()} training completed successfully")
-        return True
+        return promoted
     except subprocess.CalledProcessError as e:
         print(f"\n❌ {model_name.upper()} training failed: {e}")
         return False
@@ -112,7 +137,7 @@ def save_ensemble_metadata(production_dir: str = "models/production"):
                 "name": m["name"],
                 "weight": m["weight"],
                 "display_name": m["display"],
-                "model_file": f"{m['name']}_model.keras",
+                "model_file": f"{m['name']}/model.keras",
             }
             for m in models
         ],
@@ -150,10 +175,17 @@ def main():
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs (default: 30)")
 
     parser.add_argument("--fd", type=int, default=1, help="Dataset FD (default: 1)")
+    parser.add_argument(
+        "--accuracy-recipe",
+        choices=["none", "best"],
+        default="best",
+        help="Accuracy recipe for full training runs (default: best)",
+    )
 
     args = parser.parse_args()
 
     epochs = 10 if args.quick else args.epochs
+    accuracy_recipe = "none" if args.quick else args.accuracy_recipe
     production_dir = "models/production"
 
     print("\n" + "=" * 60)
@@ -171,6 +203,7 @@ def main():
     print(f"  Epochs: {epochs}")
     print(f"  Batch Size: 64")
     print(f"  Sequence Length: 1000")
+    print(f"  Accuracy Recipe: {accuracy_recipe}")
     print(f"  Dataset: FD{args.fd}")
     print(f"  Production Dir: {production_dir}/")
 
@@ -224,6 +257,7 @@ def main():
             batch_size=64,
             max_seq_length=1000,
             fd=args.fd,
+            accuracy_recipe=accuracy_recipe,
         )
         results[model_name] = success
 

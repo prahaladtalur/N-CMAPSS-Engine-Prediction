@@ -1,0 +1,13 @@
+\section{Conclusion}
+
+We presented a deep-learning pipeline for variable-length N-CMAPSS turbofan RUL prediction and used it to compare recurrent, convolutional, hybrid, transformer, and multi-scale attention models under a common preprocessing, training, and evaluation harness. The best controlled FD1 row reaches RMSE 6.523 (T1), and full-flight recurrent baselines remain far worse (T20: 22.28; T21: 22.20), although this effect is confounded with architecture. MSTCN ranks third on controlled FD1 (T3: 7.604) but first by RMSE on FD2 (T11: 6.495), placing it in the top attention/dilated-convolution cluster rather than above every alternative. Asymmetric MSE is a safety-motivated design choice aligned with the PHM scoring tradition~\cite{saxena2008damage} and recent loss-design work~\cite{mpm2024loss}; it is not yet a demonstrated empirical improvement over symmetric MSE in this benchmark. The code, configs, benchmark outputs, and W\&B traces provide a reproducible basis for extending this comparison.
+
+\subsection*{Limitations}
+
+\begin{itemize}
+  \item The sequence-length result is not a clean single-architecture ablation; a matched sweep over 100, 250, 500, 1000, 2000, 5000, and full-flight inputs is needed.
+  \item MSTCN component attribution is incomplete; the multi-scale branches and global fusion attention should be removed independently.
+  \item The asymmetric-loss claim needs a controlled symmetric-MSE baseline, an $\alpha$ sensitivity sweep, and a direct asymmetric-MSE versus asymmetric-Huber comparison.
+  \item Evaluation is currently concentrated on FD1 and FD2; FD3--FD7 remain necessary for broad N-CMAPSS generalization claims.
+  \item Comparisons to STAR, TTSNet, and Xu et al.'s MSTCN are architectural rather than apples-to-apples because those papers report primarily on C-MAPSS, not N-CMAPSS.
+\end{itemize}

@@ -32,6 +32,7 @@ Usage examples:
 """
 
 import argparse
+import inspect
 import json
 import os
 import random
@@ -251,6 +252,7 @@ def save_model_checkpoint(
     y_min: float,
     y_max: float,
     target_transform: Optional[Dict[str, Any]] = None,
+    prediction_calibrator: Optional[Dict[str, Any]] = None,
     save_dir: str = "models",
 ) -> str:
     """
@@ -298,10 +300,20 @@ def save_model_checkpoint(
             {
                 "y_min": float(y_min),
                 "y_max": float(y_max),
-                "clip_value": None if target_transform is None else target_transform.get("clip_value"),
-                "target_scaling": None if target_transform is None else target_transform.get("scaling"),
-                "scale_min": None if target_transform is None else target_transform.get("scale_min"),
-                "scale_max": None if target_transform is None else target_transform.get("scale_max"),
+                "clip_value": (
+                    None if target_transform is None else target_transform.get("clip_value")
+                ),
+                "target_scaling": (
+                    None if target_transform is None else target_transform.get("scaling")
+                ),
+                "scale_min": (
+                    None if target_transform is None else target_transform.get("scale_min")
+                ),
+                "scale_max": (
+                    None if target_transform is None else target_transform.get("scale_max")
+                ),
+                "prediction_clip": config.get("prediction_clip", "none"),
+                "prediction_calibration": prediction_calibrator or {"method": "none"},
             },
             f,
             indent=2,
@@ -354,6 +366,9 @@ def save_model_checkpoint(
             "loss_alpha": config.get("loss_alpha"),
             "rul_clip_value": config.get("rul_clip_value"),
             "target_scaling": config.get("target_scaling"),
+            "prediction_clip": config.get("prediction_clip"),
+            "calibration_method": config.get("calibration_method"),
+            "sample_weighting": config.get("sample_weighting"),
         },
         "files": {
             "model": "model.keras",
@@ -457,6 +472,244 @@ def make_json_safe(value):
     return value
 
 
+BEST_ACCURACY_RECIPE = {
+    # 1) Use the proven short degradation window from the benchmark.
+    "max_sequence_length": 1000,
+    # 2) Use the best tuned architecture family with a slightly richer head.
+    "units": 64,
+    "dense_units": 64,
+    "dropout_rate": 0.18,
+    "model_kwargs": {"dilation_rates": [1, 2, 4, 8, 16], "pooling": "attention"},
+    # 3) Use the strongest historical optimizer settings from local tuning.
+    "batch_size": 64,
+    "learning_rate": 0.001,
+    "epochs": 100,
+    # 4) Stabilize the RUL objective.
+    "loss_name": "asymmetric_huber",
+    "loss_alpha": 1.5,
+    "loss_delta": 0.08,
+    "target_scaling": "minmax",
+    # 5) Keep paper-style target clipping configurable but enabled for the recipe.
+    "rul_clip_value": 125,
+    # 6) Make the optimizer less sensitive to large updates.
+    "optimizer_name": "adamw",
+    "weight_decay": 1e-5,
+    "gradient_clipnorm": 1.0,
+    # 7) Let validation MAE drive the saved/restored best epoch.
+    "monitor_metric": "val_rmse",
+    "monitor_mode": "min",
+    "early_stop_min_delta": 1e-4,
+    "patience_early_stop": 18,
+    "patience_lr_reduce": 7,
+    "lr_reduce_factor": 0.5,
+    "min_lr": 1e-7,
+    # 8) Spend more training signal near failure where accuracy matters most.
+    "sample_weighting": "low_rul",
+    "sample_weight_strength": 1.0,
+    "sample_weight_power": 2.0,
+    "sample_weight_min": 0.5,
+    "sample_weight_max": 2.5,
+    # 9) Prevent physically invalid or out-of-range predictions at evaluation.
+    "prediction_clip": "train_range",
+    # 10) Calibrate final predictions on the validation split without test leakage.
+    "calibration_method": "linear",
+}
+
+
+def get_accuracy_recipe_config(recipe_name: str) -> Dict[str, Any]:
+    """Return a named accuracy recipe config."""
+    if recipe_name == "none":
+        return {}
+    if recipe_name != "best":
+        raise ValueError("Unsupported accuracy recipe. Available: none, best")
+    return dict(BEST_ACCURACY_RECIPE)
+
+
+def compute_sample_weights(
+    y_values: np.ndarray,
+    *,
+    mode: str = "none",
+    strength: float = 1.0,
+    power: float = 1.0,
+    min_weight: float = 0.25,
+    max_weight: float = 4.0,
+    num_bins: int = 10,
+) -> Optional[np.ndarray]:
+    """Compute optional per-sample weights for accuracy-focused training."""
+    if mode == "none":
+        return None
+
+    y_values = np.asarray(y_values, dtype=np.float32)
+    if y_values.size == 0:
+        return None
+
+    y_min = float(np.min(y_values))
+    y_max = float(np.max(y_values))
+    y_range = max(y_max - y_min, 1e-8)
+    normalized = np.clip((y_values - y_min) / y_range, 0.0, 1.0)
+
+    if mode == "low_rul":
+        weights = 1.0 + strength * np.power(1.0 - normalized, power)
+    elif mode == "inverse_rul":
+        weights = np.power(1.0 / np.maximum(normalized, 0.05), power)
+        weights = 1.0 + strength * (weights / np.mean(weights) - 1.0)
+    elif mode == "balanced_bins":
+        bin_count = max(2, min(num_bins, y_values.size))
+        edges = np.linspace(y_min, y_max, bin_count + 1)
+        bin_ids = np.clip(np.digitize(y_values, edges[1:-1]), 0, bin_count - 1)
+        counts = np.bincount(bin_ids, minlength=bin_count).astype(np.float32)
+        weights = 1.0 / np.maximum(counts[bin_ids], 1.0)
+        weights = weights / np.mean(weights)
+    else:
+        raise ValueError(
+            "Unsupported sample weighting. Available: none, low_rul, inverse_rul, balanced_bins"
+        )
+
+    weights = np.clip(weights, min_weight, max_weight)
+    weights = weights / max(float(np.mean(weights)), 1e-8)
+    return weights.astype(np.float32)
+
+
+def apply_prediction_postprocessing(
+    y_pred: np.ndarray,
+    *,
+    clip_mode: str = "none",
+    y_min: Optional[float] = None,
+    y_max: Optional[float] = None,
+) -> np.ndarray:
+    """Apply simple physical constraints to RUL predictions."""
+    values = np.asarray(y_pred, dtype=np.float32)
+    if clip_mode == "none":
+        return values
+    if clip_mode == "nonnegative":
+        return np.maximum(values, 0.0)
+    if clip_mode == "train_range":
+        if y_min is None or y_max is None:
+            return np.maximum(values, 0.0)
+        return np.clip(values, y_min, y_max)
+    raise ValueError("Unsupported prediction clip mode. Available: none, nonnegative, train_range")
+
+
+def fit_prediction_calibrator(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    *,
+    method: str = "none",
+) -> Dict[str, Any]:
+    """Fit a validation-only prediction calibration transform."""
+    if method == "none":
+        return {"method": "none"}
+
+    y_true = np.asarray(y_true, dtype=np.float32)
+    y_pred = np.asarray(y_pred, dtype=np.float32)
+    if y_true.size == 0 or y_pred.size == 0:
+        return {"method": "none"}
+
+    if method == "bias":
+        return {"method": "bias", "offset": float(np.mean(y_true - y_pred))}
+    if method == "linear":
+        if np.std(y_pred) < 1e-8:
+            return {"method": "bias", "offset": float(np.mean(y_true - y_pred))}
+        slope, intercept = np.polyfit(y_pred, y_true, 1)
+        return {"method": "linear", "slope": float(slope), "intercept": float(intercept)}
+
+    raise ValueError("Unsupported calibration method. Available: none, bias, linear")
+
+
+def apply_prediction_calibrator(y_pred: np.ndarray, calibrator: Dict[str, Any]) -> np.ndarray:
+    """Apply a fitted prediction calibrator."""
+    values = np.asarray(y_pred, dtype=np.float32)
+    method = calibrator.get("method", "none")
+    if method == "none":
+        return values
+    if method == "bias":
+        return values + float(calibrator.get("offset", 0.0))
+    if method == "linear":
+        return values * float(calibrator.get("slope", 1.0)) + float(
+            calibrator.get("intercept", 0.0)
+        )
+    raise ValueError(f"Unsupported calibration method in fitted calibrator: {method}")
+
+
+def should_log_sota_gap(config: Dict[str, Any]) -> bool:
+    """Only log paper SOTA gaps when dataset identity is explicitly comparable."""
+    return config.get("dataset", "ncmapss") == config.get("sota_target_dataset", "cmapss")
+
+
+def add_sota_summary_metrics(
+    summary_data: Dict[str, Any],
+    test_metrics: Dict[str, float],
+    config: Dict[str, Any],
+) -> None:
+    """Add normalized metric summaries without inventing cross-dataset SOTA gaps."""
+    if "rmse_normalized" not in test_metrics:
+        return
+
+    summary_data.update(
+        {
+            "results/best_rmse_normalized": float(test_metrics["rmse_normalized"]),
+            "results/best_mae_normalized": float(test_metrics["mae_normalized"]),
+        }
+    )
+
+    if should_log_sota_gap(config):
+        summary_data.update(
+            {
+                "results/rmse_norm_gap_vs_sota": float(test_metrics["rmse_normalized"] / 0.032),
+                "results/mae_norm_gap_vs_sota": float(test_metrics["mae_normalized"] / 0.026),
+            }
+        )
+    else:
+        summary_data.update(
+            {
+                "results/sota_gap_skipped": 1,
+                "results/sota_target_dataset": config.get("sota_target_dataset", "cmapss"),
+                "results/current_dataset": config.get("dataset", "ncmapss"),
+            }
+        )
+
+
+class RULMetricCallback(keras.callbacks.Callback):
+    """Log validation metrics in cycle-space RUL units."""
+
+    def __init__(
+        self,
+        X_val: np.ndarray,
+        y_val_true: np.ndarray,
+        target_transform: Dict[str, Any],
+        *,
+        clip_value: Optional[float],
+        prediction_clip: str,
+        y_min: float,
+        y_max: float,
+    ):
+        super().__init__()
+        self.X_val = X_val
+        self.y_val_true = clip_rul_targets(y_val_true, clip_value)
+        self.target_transform = target_transform
+        self.prediction_clip = prediction_clip
+        self.y_min = y_min
+        self.y_max = y_max
+
+    def on_epoch_end(self, epoch, logs=None):  # type: ignore[override]
+        logs = logs or {}
+        y_pred_fit = self.model.predict(self.X_val, verbose=0).flatten()
+        y_pred = inverse_transform_targets(y_pred_fit, self.target_transform)
+        y_pred = apply_prediction_postprocessing(
+            y_pred,
+            clip_mode=self.prediction_clip,
+            y_min=self.y_min,
+            y_max=self.y_max,
+        )
+        metrics = compute_all_metrics(self.y_val_true, y_pred, y_min=self.y_min, y_max=self.y_max)
+        logs["val_rmse"] = metrics["rmse"]
+        logs["val_rul_mae"] = metrics["mae"]
+        logs["val_accuracy_10"] = metrics["accuracy_10"]
+        logs["val_accuracy_15"] = metrics["accuracy_15"]
+        logs["val_accuracy_20"] = metrics["accuracy_20"]
+        logs["val_phm_score_normalized"] = metrics["phm_score_normalized"]
+
+
 def train_model(
     dev_X: List[np.ndarray],
     dev_y: List[np.ndarray],
@@ -505,14 +758,34 @@ def train_model(
         "max_sequence_length": None,
         "loss_name": "asymmetric_mse",
         "loss_alpha": 2.0,
+        "loss_delta": 1.0,
         "rul_clip_value": None,
         "target_scaling": "none",
         "gradient_clipnorm": None,
         "gradient_clipvalue": None,
+        "optimizer_name": "adam",
+        "weight_decay": None,
         "validation_split": 0.2,
         "patience_early_stop": 10,
         "patience_lr_reduce": 5,
+        "lr_reduce_factor": 0.5,
+        "min_lr": 1e-7,
+        "monitor_metric": "auto",
+        "monitor_mode": "auto",
+        "early_stop_min_delta": 0.0,
         "use_early_stop": True,
+        "sample_weighting": "none",
+        "sample_weight_strength": 1.0,
+        "sample_weight_power": 1.0,
+        "sample_weight_min": 0.25,
+        "sample_weight_max": 4.0,
+        "prediction_clip": "none",
+        "calibration_method": "none",
+        "model_kwargs": {},
+        "shuffle": True,
+        "dataset": "ncmapss",
+        "sota_target_dataset": "cmapss",
+        "fixed_metric_max_rul": None,
     }
 
     if config is None:
@@ -586,6 +859,22 @@ def train_model(
 
     # Build model
     print(f"\nBuilding {model_name} model...")
+    model_kwargs = config.get("model_kwargs", {})
+    if model_kwargs:
+        build_signature = inspect.signature(ModelRegistry.get(model_name).build)
+        accepted_kwargs = set(build_signature.parameters)
+        filtered_model_kwargs = {
+            key: value for key, value in model_kwargs.items() if key in accepted_kwargs
+        }
+        ignored_kwargs = sorted(set(model_kwargs) - set(filtered_model_kwargs))
+        if ignored_kwargs:
+            print(
+                f"Ignoring unsupported model kwargs for {model_name}: "
+                f"{', '.join(ignored_kwargs)}"
+            )
+    else:
+        filtered_model_kwargs = {}
+
     model = get_model(
         model_name,
         input_shape=input_shape,
@@ -593,14 +882,18 @@ def train_model(
         dense_units=config["dense_units"],
         dropout_rate=config["dropout_rate"],
         learning_rate=config["learning_rate"],
+        **filtered_model_kwargs,
     )
     model = compile_model_for_training(
         model,
         learning_rate=config["learning_rate"],
         loss_name=config["loss_name"],
         loss_alpha=config["loss_alpha"],
+        loss_delta=config["loss_delta"],
         gradient_clipnorm=config["gradient_clipnorm"],
         gradient_clipvalue=config["gradient_clipvalue"],
+        optimizer_name=config["optimizer_name"],
+        weight_decay=config["weight_decay"],
     )
 
     print("\nModel Architecture:")
@@ -615,31 +908,73 @@ def train_model(
         }
     )
 
+    sample_weights = compute_sample_weights(
+        clip_rul_targets(y_train, config["rul_clip_value"]),
+        mode=config["sample_weighting"],
+        strength=config["sample_weight_strength"],
+        power=config["sample_weight_power"],
+        min_weight=config["sample_weight_min"],
+        max_weight=config["sample_weight_max"],
+    )
+    if sample_weights is not None:
+        print(
+            "Sample weighting enabled: "
+            f"{config['sample_weighting']} "
+            f"(min={sample_weights.min():.3f}, max={sample_weights.max():.3f})"
+        )
+
     # Prepare validation data for training
     validation_data = (X_val, y_val_fit) if X_val is not None and y_val_fit is not None else None
+    monitor_metric = config["monitor_metric"]
+    if monitor_metric == "auto":
+        monitor_metric = "val_loss" if validation_data else "loss"
+    if validation_data is None and monitor_metric.startswith("val_"):
+        print(
+            f"Validation metric '{config['monitor_metric']}' requested without a validation "
+            "split; falling back to loss."
+        )
+        monitor_metric = "loss"
 
     # Callbacks
-    callbacks = [
+    callbacks = []
+    if validation_data:
+        callbacks.append(
+            RULMetricCallback(
+                X_val,
+                y_val,
+                target_transform,
+                clip_value=config["rul_clip_value"],
+                prediction_clip=config["prediction_clip"],
+                y_min=y_min,
+                y_max=y_max,
+            )
+        )
+    callbacks.append(
         WandbCallback(
-            monitor="val_loss" if validation_data else "loss",
+            monitor=monitor_metric,
             log_weights=False,
             log_gradients=False,
             save_model=False,
             save_graph=False,
-        ),
+        )
+    )
+    callbacks.append(
         keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss" if validation_data else "loss",
-            factor=0.5,
+            monitor=monitor_metric,
+            mode=config["monitor_mode"],
+            factor=config["lr_reduce_factor"],
             patience=config["patience_lr_reduce"],
-            min_lr=1e-7,
+            min_lr=config["min_lr"],
             verbose=1,
-        ),
-    ]
+        )
+    )
     if use_early_stop:
         callbacks.append(
             keras.callbacks.EarlyStopping(
-                monitor="val_loss" if validation_data else "loss",
+                monitor=monitor_metric,
+                mode=config["monitor_mode"],
                 patience=config["patience_early_stop"],
+                min_delta=config["early_stop_min_delta"],
                 restore_best_weights=True,
                 verbose=1,
             )
@@ -654,9 +989,30 @@ def train_model(
         epochs=config["epochs"],
         validation_data=(X_val, y_val_fit) if X_val is not None and y_val_fit is not None else None,
         validation_split=config["validation_split"] if validation_data is None else None,
+        sample_weight=sample_weights,
         callbacks=callbacks,
+        shuffle=config["shuffle"],
         verbose=1,
     )
+
+    prediction_calibrator = {"method": "none"}
+    if config["calibration_method"] != "none" and X_val is not None and y_val is not None:
+        print(f"\nFitting validation calibration: {config['calibration_method']}")
+        y_val_pred_fit = model.predict(X_val, verbose=0).flatten()
+        y_val_pred = inverse_transform_targets(y_val_pred_fit, target_transform)
+        y_val_pred = apply_prediction_postprocessing(
+            y_val_pred,
+            clip_mode=config["prediction_clip"],
+            y_min=y_min,
+            y_max=y_max,
+        )
+        y_val_eval = clip_rul_targets(y_val, config["rul_clip_value"])
+        prediction_calibrator = fit_prediction_calibrator(
+            y_val_eval,
+            y_val_pred,
+            method=config["calibration_method"],
+        )
+        print(f"Calibration parameters: {prediction_calibrator}")
 
     # Evaluate on test set
     test_metrics = {}
@@ -665,23 +1021,50 @@ def train_model(
         print("\nEvaluating on test set...")
         y_pred_fit = model.predict(X_test, verbose=0).flatten()
         y_pred = inverse_transform_targets(y_pred_fit, target_transform)
+        y_pred = apply_prediction_postprocessing(
+            y_pred,
+            clip_mode=config["prediction_clip"],
+            y_min=y_min,
+            y_max=y_max,
+        )
+        y_pred = apply_prediction_calibrator(y_pred, prediction_calibrator)
+        y_pred = apply_prediction_postprocessing(
+            y_pred,
+            clip_mode=config["prediction_clip"],
+            y_min=y_min,
+            y_max=y_max,
+        )
         y_test_eval = clip_rul_targets(y_test, config["rul_clip_value"])
-        test_metrics = compute_all_metrics(y_test_eval, y_pred, y_min=y_min, y_max=y_max)
+        test_metrics = compute_all_metrics(
+            y_test_eval,
+            y_pred,
+            y_min=y_min,
+            y_max=y_max,
+            max_rul=config["fixed_metric_max_rul"],
+        )
 
         print(format_metrics(test_metrics))
-
-        # SOTA benchmarks from MDFA paper (https://www.mdpi.com/2076-3417/15/17/9813)
-        SOTA_TARGETS = {
-            "rmse_normalized": 0.032,  # Best MDFA result
-            "mae_normalized": 0.026,  # Best MDFA result
-            "r2": 0.987,  # MDFA baseline
-        }
 
         # Log all metrics to wandb with test/ prefix
         wandb_metrics = {f"test/{k}": v for k, v in test_metrics.items()}
 
-        # Calculate and log gaps from SOTA
-        if "rmse_normalized" in test_metrics and "mae_normalized" in test_metrics:
+        # SOTA benchmarks from the MDFA paper are intentionally not compared
+        # against this N-CMAPSS run. Those reported normalized targets appear
+        # to use a C-MAPSS-style benchmark/denominator, so logging a gap here
+        # would imply dataset comparability that we have not established.
+        sota_dataset = config.get("sota_target_dataset", "cmapss")
+        current_dataset = config.get("dataset", "ncmapss")
+        SOTA_TARGETS = {
+            "rmse_normalized": 0.032,
+            "mae_normalized": 0.026,
+            "r2": 0.987,
+        }
+
+        if (
+            should_log_sota_gap(config)
+            and "rmse_normalized" in test_metrics
+            and "mae_normalized" in test_metrics
+        ):
             rmse_gap = test_metrics["rmse_normalized"] / SOTA_TARGETS["rmse_normalized"]
             mae_gap = test_metrics["mae_normalized"] / SOTA_TARGETS["mae_normalized"]
             r2_gap = SOTA_TARGETS["r2"] - test_metrics["r2"]
@@ -709,6 +1092,22 @@ def train_model(
                 f"  R² Score:          {test_metrics['r2']:.4f} vs {SOTA_TARGETS['r2']:.4f} (gap: {r2_gap:.4f})"
             )
             print("=" * 60)
+        else:
+            wandb_metrics.update(
+                {
+                    "sota/comparison_skipped": 1,
+                    "sota/target_dataset": sota_dataset,
+                    "sota/current_dataset": current_dataset,
+                }
+            )
+            print(f"\n{'='*60}")
+            print("Skipping SOTA gap comparison")
+            print(f"  Current dataset: {current_dataset}; target dataset: {sota_dataset}.")
+            print(
+                "  The MDFA normalized targets are not logged as a gap unless the "
+                "dataset/denominator is explicitly comparable."
+            )
+            print("=" * 60)
 
         wandb.log(wandb_metrics)
 
@@ -734,7 +1133,9 @@ def train_model(
             )
 
             # Plot predictions
-            plot_predictions(y_test_eval, y_pred, model_name, save_path=f"{results_dir}/predictions.png")
+            plot_predictions(
+                y_test_eval, y_pred, model_name, save_path=f"{results_dir}/predictions.png"
+            )
 
             # Plot error distribution
             plot_error_distribution(
@@ -808,8 +1209,15 @@ def train_model(
         "training/learning_rate": float(config["learning_rate"]),
         "training/loss_name": config["loss_name"],
         "training/loss_alpha": float(config["loss_alpha"]),
+        "training/loss_delta": float(config["loss_delta"]),
+        "training/optimizer_name": config["optimizer_name"],
+        "training/weight_decay": config["weight_decay"],
         "training/target_scaling": config["target_scaling"],
         "training/rul_clip_value": config["rul_clip_value"],
+        "training/sample_weighting": config["sample_weighting"],
+        "training/prediction_clip": config["prediction_clip"],
+        "training/calibration_method": config["calibration_method"],
+        "training/calibration": prediction_calibrator,
         # Reproducibility
         "reproducibility/seed": seed,
         "reproducibility/git_hash": git_hash,
@@ -837,16 +1245,7 @@ def train_model(
             }
         )
 
-        # Add normalized metrics and SOTA gaps if available
-        if "rmse_normalized" in test_metrics:
-            summary_data.update(
-                {
-                    "results/best_rmse_normalized": float(test_metrics["rmse_normalized"]),
-                    "results/best_mae_normalized": float(test_metrics["mae_normalized"]),
-                    "results/rmse_norm_gap_vs_sota": float(test_metrics["rmse_normalized"] / 0.032),
-                    "results/mae_norm_gap_vs_sota": float(test_metrics["mae_normalized"] / 0.026),
-                }
-            )
+        add_sota_summary_metrics(summary_data, test_metrics, config)
 
     wandb.summary.update(summary_data)
 
@@ -862,6 +1261,7 @@ def train_model(
             y_min=y_min,
             y_max=y_max,
             target_transform=target_transform,
+            prediction_calibrator=prediction_calibrator,
         )
 
         # Log checkpoint location to wandb
@@ -1126,6 +1526,7 @@ def print_models_info():
         "Attention-based Models": [
             "transformer",
             "mdfa",
+            "mdfa_paper",
             "cnn_lstm_attention",
             "cata_tcn",
             "ttsnet",
@@ -1253,7 +1654,7 @@ Examples:
         "--loss",
         type=str,
         default="asymmetric_mse",
-        choices=["asymmetric_mse", "mse", "mae", "huber", "log_cosh"],
+        choices=["asymmetric_mse", "asymmetric_huber", "mse", "mae", "huber", "log_cosh"],
         help="Training loss to optimize (default: asymmetric_mse)",
     )
     parser.add_argument(
@@ -1261,6 +1662,12 @@ Examples:
         type=float,
         default=2.0,
         help="Late-prediction penalty multiplier for asymmetric_mse (default: 2.0)",
+    )
+    parser.add_argument(
+        "--loss-delta",
+        type=float,
+        default=1.0,
+        help="Huber/asymmetric_huber delta in the active target scale (default: 1.0)",
     )
     parser.add_argument(
         "--rul-clip",
@@ -1288,6 +1695,38 @@ Examples:
         help="Optional Adam clipvalue for training stability",
     )
     parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="adam",
+        choices=["adam", "adamw"],
+        help="Optimizer to use (default: adam)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=None,
+        help="Optional AdamW weight decay",
+    )
+    parser.add_argument(
+        "--monitor-metric",
+        type=str,
+        default="auto",
+        help="Metric monitored by early stopping/LR scheduler, e.g. val_rmse or val_accuracy_10",
+    )
+    parser.add_argument(
+        "--monitor-mode",
+        type=str,
+        default="auto",
+        choices=["auto", "min", "max"],
+        help="Monitor direction for callbacks (default: auto)",
+    )
+    parser.add_argument(
+        "--early-stop-min-delta",
+        type=float,
+        default=0.0,
+        help="Minimum monitored-metric improvement for early stopping",
+    )
+    parser.add_argument(
         "--patience-early-stop",
         type=int,
         default=10,
@@ -1300,10 +1739,62 @@ Examples:
         help="ReduceLROnPlateau patience (default: 5)",
     )
     parser.add_argument(
+        "--lr-reduce-factor",
+        type=float,
+        default=0.5,
+        help="ReduceLROnPlateau factor (default: 0.5)",
+    )
+    parser.add_argument(
+        "--min-lr",
+        type=float,
+        default=1e-7,
+        help="Minimum learning rate for ReduceLROnPlateau (default: 1e-7)",
+    )
+    parser.add_argument(
         "--max-seq-length",
         type=int,
         default=None,
         help="Maximum sequence length (default: None)",
+    )
+    parser.add_argument(
+        "--sample-weighting",
+        type=str,
+        default="none",
+        choices=["none", "low_rul", "inverse_rul", "balanced_bins"],
+        help="Optional sample weighting strategy to emphasize hard/critical RUL regions",
+    )
+    parser.add_argument(
+        "--sample-weight-strength",
+        type=float,
+        default=1.0,
+        help="Strength for low_rul/inverse_rul sample weighting",
+    )
+    parser.add_argument(
+        "--prediction-clip",
+        type=str,
+        default="none",
+        choices=["none", "nonnegative", "train_range"],
+        help="Clip predictions before metrics and saved inference metadata",
+    )
+    parser.add_argument(
+        "--calibration-method",
+        type=str,
+        default="none",
+        choices=["none", "bias", "linear"],
+        help="Validation-fitted prediction calibration applied before final metrics",
+    )
+    parser.add_argument(
+        "--model-kwargs",
+        type=str,
+        default=None,
+        help="JSON object of architecture-specific keyword args, e.g. '{\"dilation_rates\":[1,2,4,8]}'",
+    )
+    parser.add_argument(
+        "--accuracy-recipe",
+        type=str,
+        default="none",
+        choices=["none", "best"],
+        help="Apply a bundled set of accuracy-focused training settings",
     )
 
     # Wandb options
@@ -1437,6 +1928,28 @@ Examples:
     else:
         json_training_config = {}
 
+    if args.accuracy_recipe != "none":
+        recipe_config = get_accuracy_recipe_config(args.accuracy_recipe)
+        json_training_config = {**recipe_config, **json_training_config}
+        if not args.model and not args.compare and not args.compare_all:
+            args.model = "mstcn"
+        print(f"\nApplied accuracy recipe: {args.accuracy_recipe}")
+        print(
+            "Recipe strategies: short window, MSTCN scale kwargs, asymmetric Huber, "
+            "AdamW, gradient clipping, validation RUL metrics, sample weighting, "
+            "prediction clipping, validation calibration, and longer patience."
+        )
+
+    cli_model_kwargs = {}
+    if args.model_kwargs:
+        try:
+            cli_model_kwargs = json.loads(args.model_kwargs)
+            if not isinstance(cli_model_kwargs, dict):
+                raise ValueError("--model-kwargs must decode to a JSON object")
+        except Exception as e:
+            print(f"Error parsing --model-kwargs: {e}")
+            sys.exit(1)
+
     # Validate arguments
     if not args.compare and not args.compare_all and not args.model:
         parser.print_help()
@@ -1448,6 +1961,11 @@ Examples:
     (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd)
     val_X, val_y = val_pair if val_pair else (None, None)
 
+    merged_model_kwargs = {
+        **json_training_config.get("model_kwargs", {}),
+        **cli_model_kwargs,
+    }
+
     # Training configuration - JSON config overrides CLI args
     config = {
         "units": json_training_config.get("units", args.units),
@@ -1456,16 +1974,19 @@ Examples:
         "learning_rate": json_training_config.get("learning_rate", args.lr),
         "batch_size": json_training_config.get("batch_size", args.batch_size),
         "epochs": json_training_config.get("epochs", args.epochs),
-        "loss_name": json_training_config.get("loss_name", json_training_config.get("loss", args.loss)),
+        "loss_name": json_training_config.get(
+            "loss_name", json_training_config.get("loss", args.loss)
+        ),
         "loss_alpha": json_training_config.get("loss_alpha", args.loss_alpha),
+        "loss_delta": json_training_config.get("loss_delta", args.loss_delta),
         "rul_clip_value": json_training_config.get("rul_clip_value", args.rul_clip),
         "target_scaling": json_training_config.get("target_scaling", args.target_scaling),
-        "gradient_clipnorm": json_training_config.get(
-            "gradient_clipnorm", args.gradient_clipnorm
-        ),
+        "gradient_clipnorm": json_training_config.get("gradient_clipnorm", args.gradient_clipnorm),
         "gradient_clipvalue": json_training_config.get(
             "gradient_clipvalue", args.gradient_clipvalue
         ),
+        "optimizer_name": json_training_config.get("optimizer_name", args.optimizer),
+        "weight_decay": json_training_config.get("weight_decay", args.weight_decay),
         "max_sequence_length": json_training_config.get("max_sequence_length", args.max_seq_length),
         "patience_early_stop": json_training_config.get(
             "patience_early_stop", args.patience_early_stop
@@ -1473,6 +1994,25 @@ Examples:
         "patience_lr_reduce": json_training_config.get(
             "patience_lr_reduce", args.patience_lr_reduce
         ),
+        "lr_reduce_factor": json_training_config.get("lr_reduce_factor", args.lr_reduce_factor),
+        "min_lr": json_training_config.get("min_lr", args.min_lr),
+        "monitor_metric": json_training_config.get("monitor_metric", args.monitor_metric),
+        "monitor_mode": json_training_config.get("monitor_mode", args.monitor_mode),
+        "early_stop_min_delta": json_training_config.get(
+            "early_stop_min_delta", args.early_stop_min_delta
+        ),
+        "sample_weighting": json_training_config.get("sample_weighting", args.sample_weighting),
+        "sample_weight_strength": json_training_config.get(
+            "sample_weight_strength", args.sample_weight_strength
+        ),
+        "sample_weight_power": json_training_config.get("sample_weight_power", 1.0),
+        "sample_weight_min": json_training_config.get("sample_weight_min", 0.25),
+        "sample_weight_max": json_training_config.get("sample_weight_max", 4.0),
+        "prediction_clip": json_training_config.get("prediction_clip", args.prediction_clip),
+        "calibration_method": json_training_config.get(
+            "calibration_method", args.calibration_method
+        ),
+        "model_kwargs": merged_model_kwargs,
         "use_early_stop": json_training_config.get("use_early_stop", not args.no_early_stop),
     }
 
@@ -1589,7 +2129,9 @@ Examples:
                             k: float(np.std([m[k] for m in all_metrics if k in m]))
                             for k in metric_keys
                         },
-                        "per_seed": {str(seeds[i]): all_metrics[i] for i in range(len(all_metrics))},
+                        "per_seed": {
+                            str(seeds[i]): all_metrics[i] for i in range(len(all_metrics))
+                        },
                     }
                 )
                 summary_path = f"results/{model_name}_multiseed_summary.json"

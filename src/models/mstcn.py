@@ -65,8 +65,7 @@ class GlobalFusionAttention(layers.Layer):
 
         # Temporal attention for each scale
         self.temporal_attentions = [
-            TemporalAttention1D(kernel_size=7, name=f"temporal_attn_{i}")
-            for i in range(num_scales)
+            TemporalAttention1D(kernel_size=7, name=f"temporal_attn_{i}") for i in range(num_scales)
         ]
 
         # Cross-scale fusion weights (learnable)
@@ -145,6 +144,22 @@ class GlobalFusionAttention(layers.Layer):
         return config
 
 
+class TemporalAttentionPooling(layers.Layer):
+    """Learned temporal pooling for degradation-focused sequence summaries."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.score_layer = layers.Dense(1)
+
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+        scores = self.score_layer(inputs)
+        weights = tf.nn.softmax(scores, axis=1)
+        return tf.reduce_sum(inputs * weights, axis=1)
+
+    def get_config(self):
+        return super().get_config()
+
+
 def build_mstcn_model(
     input_shape: Tuple[int, int],
     units: int = 64,
@@ -153,6 +168,7 @@ def build_mstcn_model(
     learning_rate: float = 0.001,
     kernel_size: int = 3,
     dilation_rates: List[int] = None,
+    pooling: str = "average",
 ) -> keras.Model:
     """
     Build MSTCN model for RUL prediction.
@@ -166,6 +182,7 @@ def build_mstcn_model(
         kernel_size: Kernel size for TCN convolutions
         dilation_rates: List of dilation rates for multi-scale branches
                        (default: [1, 2, 4, 8])
+        pooling: Sequence pooling head: "average" or "attention"
 
     Returns:
         Compiled Keras model
@@ -213,8 +230,16 @@ def build_mstcn_model(
         tcn_outputs
     )
 
-    # Global pooling to get fixed-size representation
-    x = layers.GlobalAveragePooling1D(name="global_pooling")(fused)
+    # Pooling to get fixed-size representation
+    if pooling == "average":
+        x = layers.GlobalAveragePooling1D(name="global_pooling")(fused)
+    elif pooling == "attention":
+        attention_pool = TemporalAttentionPooling(name="temporal_attention_pooling")(fused)
+        max_pool = layers.GlobalMaxPooling1D(name="global_max_pooling")(fused)
+        last_step = layers.Lambda(lambda tensor: tensor[:, -1, :], name="last_timestep")(fused)
+        x = layers.Concatenate(name="degradation_pooling")([attention_pool, max_pool, last_step])
+    else:
+        raise ValueError("Unsupported MSTCN pooling. Available: average, attention")
 
     # Dense output layers
     x = layers.Dense(dense_units, activation="relu", name="dense_1")(x)

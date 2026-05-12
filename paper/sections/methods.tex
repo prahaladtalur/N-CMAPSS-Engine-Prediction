@@ -1,0 +1,49 @@
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Dataset and task}
+
+We evaluate remaining-useful-life regression on N-CMAPSS~\cite{ariaschao2021ncmapss}, using the train, validation, and test splits exposed by the \texttt{rul\_datasets} reader~\cite{ruldatasets2026}. Each engine unit is represented as a list of per-cycle multivariate sensor sequences, and each cycle has one scalar RUL target. The pipeline treats each cycle as one supervised example with input shape $(T,32)$, where $T$ is the retained temporal length and 32 is the number of sensor channels. FD1 is the primary controlled benchmark and FD2 is used as a cross-subset robustness check.
+
+\subsection{Variable-length sequence preparation}
+
+Raw N-CMAPSS cycles can contain long, variable-length flight records. The training pipeline flattens the per-engine lists into per-cycle examples and, when a maximum sequence length is specified, keeps the last $T$ timesteps of each cycle. Unless otherwise noted, the apples-to-apples benchmark uses $T=1000$. This last-window convention encodes the hypothesis that recent degradation behavior is more predictive of near-term RUL than distant early-flight history. After truncation, feature normalization is fit on the training split only and applied unchanged to validation and test examples, avoiding leakage from held-out engines.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{pipeline_overview}
+\caption{Preprocessing and evaluation pipeline. Each engine is flattened into per-cycle examples, truncated to the last $N$ timesteps, normalized with train-fit feature statistics, passed through the shared model registry, and evaluated with the same RUL metrics.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{Loss and metrics}
+
+All controlled benchmark rows in the main comparison use asymmetric MSE with late-prediction multiplier $\alpha=2.0$:
+\begin{equation}
+\mathcal{L} =
+\frac{1}{N}\sum_{i=1}^{N}
+\begin{cases}
+\alpha(\hat{y}_i-y_i)^2, & \hat{y}_i-y_i \ge 0,\\
+(\hat{y}_i-y_i)^2, & \hat{y}_i-y_i < 0.
+\end{cases}
+\end{equation}
+Here over-predicting RUL is treated as a late maintenance decision and is penalized more strongly than conservative under-prediction. This is a design choice motivated by the asymmetric PHM scoring function of Saxena et al.~\cite{saxena2008damage} and recent asymmetric-loss work~\cite{mpm2024loss}; Section~\ref{sec:ablations} makes clear that we do not yet have a controlled symmetric-MSE baseline.
+
+Evaluation reports RMSE, $R^2$, PHM score, and threshold accuracies. Accuracy@20 is the percentage of predictions within $\pm20$ cycles of the true RUL. The PHM score follows the standard asymmetric exponential form, with late errors penalized more sharply than early errors.
+
+\subsection{Model registry and benchmark harness}
+
+The repository currently registers 22 neural architectures under a common registry interface. The catalog spans a no-temporal MLP baseline, recurrent models~\cite{hochreiter1997lstm,cho2014gru}, dilated convolutional models~\cite{bai2018tcn,oord2016wavenet}, CNN--RNN hybrids, attention models~\cite{vaswani2017attention}, transformer variants~\cite{fan2024star}, and recent multi-scale TCN/fusion architectures~\cite{ttsnet2025,xu2024msattn}. This shared interface lets the same preprocessing, optimizer, callbacks, loss, and metric code drive every architecture in the benchmark. Standard hyperparameters are units=64, dense units=32, dropout=0.2, Adam~\cite{kingma2015adam} with learning rate 0.001, 30 epochs for the controlled runs, and early stopping on validation loss.
+
+\subsection{MSTCN architecture}
+
+The flagship model is a multi-scale temporal convolutional network with global fusion attention (MSTCN), following the architectural family of attention-based multi-scale TCNs~\cite{xu2024msattn}. Given an input sequence $(T,32)$, MSTCN applies four parallel residual TCN branches with dilation rates $1$, $2$, $4$, and $8$. Each branch captures a different temporal receptive field over the same sensor stream. The branch outputs are then passed through a global fusion attention block that combines channel attention, temporal attention, cross-scale concatenation, and a learned fusion gate. The fused representation is pooled over time and passed through a dense regression head to produce one scalar RUL estimate.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{mstcn_architecture}
+\caption{MSTCN architecture used in the benchmark. Parallel residual TCN branches cover four dilation scales before global fusion attention combines channel, temporal, and cross-scale information for the final RUL regression head.}
+\label{fig:mstcn-architecture}
+\end{figure}
+
+For the default configuration, MSTCN uses 64 filters per branch and a 32-unit dense head, yielding roughly 150k parameters. This is larger than some baselines, so our fixed-protocol claim is limited to ``competitive'' rather than ``superior at matched parameter count.'' An iso-parameter comparison has not yet been run.

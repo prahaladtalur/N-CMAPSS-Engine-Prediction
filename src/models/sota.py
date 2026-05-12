@@ -18,7 +18,7 @@ from tensorflow.keras import layers
 
 @ModelRegistry.register("mdfa")
 class MDFAModel(BaseModel):
-    """Multi-Scale Dilated Fusion Attention model."""
+    """Legacy MDFA wrapper with an added BiLSTM head."""
 
     @staticmethod
     def build(
@@ -46,6 +46,38 @@ class MDFAModel(BaseModel):
         x = layers.Dropout(dropout_rate)(x)
         outputs = layers.Dense(1, activation="linear")(x)
         model = keras.Model(inputs=inputs, outputs=outputs, name="mdfa")
+        return BaseModel.compile_model(model, learning_rate)
+
+
+@ModelRegistry.register("mdfa_paper")
+class MDFAPaperModel(BaseModel):
+    """MDFA-style model without the legacy BiLSTM wrapper head."""
+
+    @staticmethod
+    def build(
+        input_shape: Tuple[int, int],
+        units: int = 64,
+        dense_units: int = 32,
+        dropout_rate: float = 0.3,
+        learning_rate: float = 0.0001,
+        dilation_rates: list = None,
+    ) -> keras.Model:
+        if dilation_rates is None:
+            dilation_rates = [1, 2, 4]
+
+        inputs = layers.Input(shape=input_shape)
+        x = MDFAModule(
+            filters=units,
+            dilation_rates=dilation_rates,
+            kernel_size=3,
+            dropout_rate=dropout_rate,
+        )(inputs)
+        x = layers.GlobalAveragePooling1D()(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Dense(dense_units, activation="relu")(x)
+        x = layers.Dropout(dropout_rate)(x)
+        outputs = layers.Dense(1, activation="linear")(x)
+        model = keras.Model(inputs=inputs, outputs=outputs, name="mdfa_paper")
         return BaseModel.compile_model(model, learning_rate)
 
 
@@ -196,6 +228,7 @@ class MSTCNModel(BaseModel):
         learning_rate: float = 0.001,
         kernel_size: int = 3,
         dilation_rates: list = None,
+        pooling: str = "average",
     ) -> keras.Model:
         return build_mstcn_model(
             input_shape=input_shape,
@@ -205,4 +238,5 @@ class MSTCNModel(BaseModel):
             learning_rate=learning_rate,
             kernel_size=kernel_size,
             dilation_rates=dilation_rates,
+            pooling=pooling,
         )

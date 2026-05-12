@@ -27,6 +27,8 @@ def _write_artifacts(
     scale_min: Optional[float] = None,
     scale_max: Optional[float] = None,
     clip_value: Optional[float] = None,
+    prediction_clip: str = "none",
+    prediction_calibration: Optional[dict] = None,
 ):
     model_dir.mkdir(parents=True, exist_ok=True)
     (model_dir / "model.keras").write_text("stub", encoding="utf-8")
@@ -46,6 +48,8 @@ def _write_artifacts(
                 "target_scaling": target_scaling,
                 "scale_min": scale_min,
                 "scale_max": scale_max,
+                "prediction_clip": prediction_clip,
+                "prediction_calibration": prediction_calibration or {"method": "none"},
             },
             f,
         )
@@ -71,6 +75,27 @@ def test_predictor_inverse_transforms_minmax_predictions(monkeypatch, tmp_path):
     assert result["prediction"] == pytest.approx(100.0)
     assert result["individual_predictions"]["model"] == pytest.approx(100.0)
     assert model.seen_shapes == [(1, 4, 3)]
+
+
+def test_predictor_applies_saved_clip_and_calibration(monkeypatch, tmp_path):
+    model = FakeModel(1.5)
+    model_path = tmp_path / "single" / "model.keras"
+    _write_artifacts(
+        model_path.parent,
+        max_sequence_length=4,
+        target_scaling="minmax",
+        scale_min=0.0,
+        scale_max=100.0,
+        prediction_clip="train_range",
+        prediction_calibration={"method": "bias", "offset": -10.0},
+    )
+
+    monkeypatch.setattr("predict.tf.keras.models.load_model", lambda *args, **kwargs: model)
+
+    predictor = RULPredictor(model_path=str(model_path))
+    result = predictor.predict_single(np.ones((4, 3), dtype=np.float32))
+
+    assert result["prediction"] == pytest.approx(90.0)
 
 
 def test_ensemble_predictor_uses_per_model_artifacts(monkeypatch, tmp_path):
@@ -110,6 +135,35 @@ def test_ensemble_predictor_uses_per_model_artifacts(monkeypatch, tmp_path):
     assert result["prediction"] == pytest.approx(75.0)
     assert model_a.seen_shapes == [(1, 4, 3)]
     assert model_b.seen_shapes == [(1, 2, 3)]
+
+
+def test_ensemble_predictor_normalizes_custom_weights(monkeypatch, tmp_path):
+    model_a = FakeModel(10.0)
+    model_b = FakeModel(30.0)
+
+    model_a_path = tmp_path / "a" / "model.keras"
+    model_b_path = tmp_path / "b" / "model.keras"
+    _write_artifacts(model_a_path.parent, max_sequence_length=4)
+    _write_artifacts(model_b_path.parent, max_sequence_length=4)
+
+    fake_models = {
+        str(model_a_path): model_a,
+        str(model_b_path): model_b,
+    }
+    monkeypatch.setattr(
+        "predict.tf.keras.models.load_model",
+        lambda path, **kwargs: fake_models[str(path)],
+    )
+
+    predictor = RULPredictor(
+        ensemble=True,
+        model_paths=[str(model_a_path), str(model_b_path)],
+        ensemble_weights=[3.0, 1.0],
+    )
+    result = predictor.predict_single(np.ones((4, 3), dtype=np.float32))
+
+    assert predictor.ensemble_weights == pytest.approx([0.75, 0.25])
+    assert result["prediction"] == pytest.approx(15.0)
 
 
 def test_evaluate_test_set_clips_ground_truth(monkeypatch, tmp_path):

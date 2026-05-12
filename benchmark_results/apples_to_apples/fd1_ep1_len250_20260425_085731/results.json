@@ -1,0 +1,43 @@
+[
+  {
+    "model": "cnn_gru",
+    "runtime_seconds": 4.803043842315674,
+    "config": {
+      "units": 64,
+      "dense_units": 32,
+      "dropout_rate": 0.2,
+      "learning_rate": 0.001,
+      "batch_size": 64,
+      "epochs": 1,
+      "max_sequence_length": 250,
+      "loss_name": "asymmetric_mse",
+      "loss_alpha": 2.0,
+      "optimizer_name": "adam",
+      "validation_split": 0.2,
+      "patience_early_stop": 3,
+      "patience_lr_reduce": 2,
+      "monitor_metric": "val_rmse",
+      "monitor_mode": "min",
+      "dataset": "ncmapss",
+      "sota_target_dataset": "cmapss",
+      "fixed_metric_max_rul": 125.0
+    },
+    "metrics": {
+      "mse": 1854.8377685546875,
+      "rmse": 43.06782753465384,
+      "mae": 37.37187957763672,
+      "mape": 332248032.0,
+      "r2": -2.9835944175720215,
+      "phm_score": 15598.435546875,
+      "phm_score_normalized": 45.74321365356445,
+      "asymmetric_loss": 1854.953857421875,
+      "accuracy_10": 15.542521994134898,
+      "accuracy_15": 21.114369501466275,
+      "accuracy_20": 26.68621700879765,
+      "rmse_normalized": 0.6625819812289563,
+      "mae_normalized": 0.5749520063400269,
+      "rmse_normalized_fixed": 0.3445426298930644,
+      "mae_normalized_fixed": 0.29897502064704895
+    }
+  }
+]

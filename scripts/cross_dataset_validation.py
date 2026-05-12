@@ -69,7 +69,6 @@ def train_model_if_needed(
     ]
 
     env = os.environ.copy()
-    env["WANDB_MODE"] = "offline"
 
     try:
         result = subprocess.run(

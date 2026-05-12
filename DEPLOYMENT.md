@@ -10,7 +10,7 @@ This guide shows how to use the production-ready CNN-GRU model for Remaining Use
 
 ```bash
 # Train and save the best model (CNN-GRU with asymmetric loss)
-WANDB_MODE=offline python train_production_model.py
+python train_production_model.py
 
 # Custom output directory
 python train_production_model.py --output-dir models/my_model
@@ -21,6 +21,7 @@ This will:
 - Save model to `models/production/cnn_gru_best.keras`
 - Save config to `models/production/config.json`
 - Save metrics to `models/production/metrics.json`
+- Log the run to W&B
 
 ### 2. Make Predictions
 

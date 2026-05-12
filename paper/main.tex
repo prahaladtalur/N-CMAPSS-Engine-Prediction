@@ -1,0 +1,43 @@
+\documentclass[11pt]{article}
+
+% XeLaTeX-only fonts
+\usepackage{fontspec}
+\usepackage{unicode-math}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{microtype}
+\usepackage{authblk}
+
+\graphicspath{{figures/}}
+
+\title{Predicting Remaining Useful Life in Commercial Turbofans:\\
+A Deep-Learning Pipeline for Variable-Length N-CMAPSS Flights}
+\author{Prahalad Talur}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\input{sections/abstract_intro}
+
+\input{sections/related_work}
+
+\input{sections/methods}
+
+\input{sections/experiments}
+
+\input{sections/ablations_discussion}
+
+\input{sections/conclusion}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

@@ -1,0 +1,30 @@
+[
+  {
+    "experiment": {
+      "key": "cnn_gru_baseline",
+      "model_name": "cnn_gru",
+      "idea": "Hybrid convolution + recurrent baseline for local pattern extraction plus temporal memory",
+      "source_title": "An enhanced CNN-LSTM remaining useful life prediction model for aircraft engine with attention mechanism (PeerJ Computer Science, 2022)",
+      "source_url": "https://www.researchgate.net/publication/363110710_An_enhanced_CNN-LSTM_remaining_useful_life_prediction_model_for_aircraft_engine_with_attention_mechanism",
+      "notes": "Family proxy: repo uses CNN-GRU instead of CNN-LSTM-CBAM.",
+      "config_overrides": {}
+    },
+    "status": "ok",
+    "runtime_seconds": 4.956387281417847,
+    "metrics": {
+      "mse": 1639.7032470703125,
+      "rmse": 40.49324940123122,
+      "mae": 34.68529510498047,
+      "mape": 655312128.0,
+      "r2": -2.521554708480835,
+      "phm_score": 12302.431640625,
+      "phm_score_normalized": 36.077510833740234,
+      "asymmetric_loss": 1640.5084228515625,
+      "accuracy_10": 18.7683284457478,
+      "accuracy_15": 24.633431085043988,
+      "accuracy_20": 30.498533724340177,
+      "rmse_normalized": 0.6229730640086915,
+      "mae_normalized": 0.5336198806762695
+    }
+  }
+]

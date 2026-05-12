@@ -1,0 +1,118 @@
+[
+  {
+    "experiment": "mstcn_baseline",
+    "model": "mstcn",
+    "config": {
+      "epochs": 1,
+      "batch_size": 32,
+      "learning_rate": 0.001,
+      "loss_name": "asymmetric_mse",
+      "loss_alpha": 2.0,
+      "max_sequence_length": 1000,
+      "patience_early_stop": 10,
+      "patience_lr_reduce": 5
+    },
+    "rmse_normalized": 0.5203818621525463,
+    "mae_normalized": 0.4371004104614258,
+    "r2": -1.457198143005371,
+    "accuracy_10": 21.700879765395893,
+    "train_time": 11.41581392288208,
+    "success": true,
+    "sota_gap": 16.261933192267072,
+    "improvement_needed": 0.4883818621525463
+  },
+  {
+    "experiment": "mstcn_clip125",
+    "model": "mstcn",
+    "config": {
+      "epochs": 1,
+      "batch_size": 32,
+      "learning_rate": 0.001,
+      "loss_name": "asymmetric_mse",
+      "loss_alpha": 2.0,
+      "rul_clip_value": 125,
+      "max_sequence_length": 1000,
+      "patience_early_stop": 10,
+      "patience_lr_reduce": 5
+    },
+    "rmse_normalized": 0.5203818621525463,
+    "mae_normalized": 0.4371004104614258,
+    "r2": -1.457198143005371,
+    "accuracy_10": 21.700879765395893,
+    "train_time": 11.248617172241211,
+    "success": true,
+    "sota_gap": 16.261933192267072,
+    "improvement_needed": 0.4883818621525463
+  },
+  {
+    "experiment": "mstcn_clip125_minmax",
+    "model": "mstcn",
+    "config": {
+      "epochs": 1,
+      "batch_size": 32,
+      "learning_rate": 0.001,
+      "loss_name": "asymmetric_mse",
+      "loss_alpha": 2.0,
+      "rul_clip_value": 125,
+      "target_scaling": "minmax",
+      "max_sequence_length": 1000,
+      "patience_early_stop": 12,
+      "patience_lr_reduce": 6
+    },
+    "rmse_normalized": 0.3103402728073306,
+    "mae_normalized": 0.26751548051834106,
+    "r2": 0.12607908248901367,
+    "accuracy_10": 27.859237536656888,
+    "train_time": 11.301100969314575,
+    "success": true,
+    "sota_gap": 9.698133525229082,
+    "improvement_needed": 0.27834027280733065
+  },
+  {
+    "experiment": "mstcn_clip125_minmax_huber",
+    "model": "mstcn",
+    "config": {
+      "epochs": 1,
+      "batch_size": 16,
+      "learning_rate": 0.001,
+      "loss_name": "huber",
+      "rul_clip_value": 125,
+      "target_scaling": "minmax",
+      "max_sequence_length": 1000,
+      "patience_early_stop": 15,
+      "patience_lr_reduce": 7
+    },
+    "rmse_normalized": 0.27204372224037465,
+    "mae_normalized": 0.2369118481874466,
+    "r2": 0.328457772731781,
+    "accuracy_10": 29.61876832844575,
+    "train_time": 11.32413101196289,
+    "success": true,
+    "sota_gap": 8.501366320011707,
+    "improvement_needed": 0.24004372224037465
+  },
+  {
+    "experiment": "mstcn_clip125_minmax_huber_clipnorm1",
+    "model": "mstcn",
+    "config": {
+      "epochs": 1,
+      "batch_size": 16,
+      "learning_rate": 0.001,
+      "loss_name": "huber",
+      "rul_clip_value": 125,
+      "target_scaling": "minmax",
+      "gradient_clipnorm": 1.0,
+      "max_sequence_length": 1000,
+      "patience_early_stop": 15,
+      "patience_lr_reduce": 7
+    },
+    "rmse_normalized": 0.27204372224037465,
+    "mae_normalized": 0.2369118481874466,
+    "r2": 0.328457772731781,
+    "accuracy_10": 29.61876832844575,
+    "train_time": 11.342171907424927,
+    "success": true,
+    "sota_gap": 8.501366320011707,
+    "improvement_needed": 0.24004372224037465
+  }
+]

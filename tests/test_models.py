@@ -64,6 +64,7 @@ class TestModelRegistry:
             "cnn_gru",
             "inception_lstm",
             "mdfa",
+            "mdfa_paper",
             "cnn_lstm_attention",
             "cata_tcn",
             "ttsnet",
@@ -73,6 +74,12 @@ class TestModelRegistry:
             "star_transformer",
         }
         assert expected.issubset(registered), f"Missing models: {expected - registered}"
+
+    def test_mdfa_paper_has_no_lstm_layers(self):
+        model = ModelRegistry.build("mdfa_paper", input_shape=SMALL_INPUT_SHAPE)
+        layer_types = {type(layer).__name__ for layer in model.layers}
+        assert "LSTM" not in layer_types
+        assert "Bidirectional" not in layer_types
 
     def test_build_unknown_model_raises(self):
         with pytest.raises((KeyError, ValueError)):

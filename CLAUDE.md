@@ -35,7 +35,7 @@ python predict.py --model-path models/production/cnn_gru_best.keras
 python predict.py --model-path models/production/cnn_gru_best.keras --unit-id 5
 
 # Production
-WANDB_MODE=offline python train_production_model.py  # Train & save best model
+python train_production_model.py                  # Train & save best model
 python example_usage.py                              # 5 real-world usage examples
 ```
 
@@ -44,7 +44,7 @@ python example_usage.py                              # 5 real-world usage exampl
 - **Python** 3.8+ (CI tests 3.9, 3.10, 3.11)
 - **TensorFlow/Keras** for all models
 - **uv** for dependency management (`uv sync`)
-- **W&B** for experiment tracking (set `WANDB_MODE=offline` for local-only)
+- **W&B** for experiment tracking (online by default; set `WANDB_MODE=offline` only for local-only runs)
 - **Black** (line-length 100) + **MyPy** (relaxed) for code quality
 
 ## Architecture
@@ -194,6 +194,19 @@ python train_model.py --compare --models mstcn transformer wavenet --max-seq-len
 - [README_PRODUCTION.md](README_PRODUCTION.md) — 3-step production deployment
 - [DEPLOYMENT.md](DEPLOYMENT.md) — Full deployment guide, Python API, troubleshooting
 
+## Working With Me
+
+- **Terse prompts mean "you have context, act."** "fix it", "continue", "go", "is it done" — don't re-ask scope; reread the last few turns and proceed. If genuinely ambiguous, ask one targeted question, not a checklist.
+- **Default to parallel agents for research/review/multi-angle work.** Phrases like "send out agents", "use as much as you can", "review phase" mean spawn multiple Agents concurrently in one message. Don't serialize when the work is independent.
+- **Close the loop without asking.** When I say "research X" I almost always mean research → implement → verify. Don't stop after the research phase to confirm — proceed to implementation, then report results.
+- **Adversarial review is welcome.** When I ask you to "disprove", "find what's wrong", or "review", argue against the work hard. Don't soften findings. Run the second-opinion agent if helpful.
+- **Long autonomous runs are fine — protect the machine.** When I ask for long training/benchmarks, run in background, monitor for OOM/thermal issues, and stream progress. Don't kill jobs to "be safe"; do warn before anything that could crash the laptop.
+- **Hard-fail on missing required config.** W&B tracking is required (online by default); if not logged in / not configured, fail loudly rather than falling back to offline silently.
+- **Verify environment before assuming.** I work in the terminal CLI, not VS Code's Claude extension. Don't assume IDE features. Check which file/branch/cwd before editing — I've caught wrong-file edits before.
+- **Make output fit the terminal width.** If a status line / table / log is too wide, truncate or reflow — never hide content silently.
+- **Branch + PR per non-trivial change.** Per the workflow above: issue → branch → commits → PR → CI green → merge. Don't push to main; don't skip hooks.
+- **Don't summarize the diff back at me.** End-of-turn: one or two sentences, what changed and what's next. I can read the diff.
+
 ## Common Pitfalls
 
 - `train_model.py` is ~1000 lines — training logic lives here, NOT in `src/models/`
@@ -201,5 +214,5 @@ python train_model.py --compare --models mstcn transformer wavenet --max-seq-len
 - Data downloads ~1GB on first use; cached in `data/raw/`
 - **CRITICAL**: Use `--max-seq-length 1000` for best performance (58% better than full sequences!)
 - Traditional RNNs (LSTM/GRU) do **not** work well on this dataset (negative R² scores)
-- W&B requires `WANDB_API_KEY` env var, or set `WANDB_MODE=offline` for local runs
+- W&B runs online by default when you are logged in; use `WANDB_MODE=offline` only when you intentionally want a local-only run
 - Models overfit after epoch 30-40 — use early stopping
