@@ -85,6 +85,8 @@ class ChannelAttention1D(layers.Layer):
         super().build(input_shape)
 
     def call(self, inputs: tf.Tensor) -> tf.Tensor:
+        if self.fc1 is None or self.fc2 is None:
+            raise RuntimeError("ChannelAttention1D must be built before call().")
         pooled = tf.reduce_mean(inputs, axis=1)
         weights = self.fc2(self.fc1(pooled))
         return inputs * tf.expand_dims(weights, axis=1)

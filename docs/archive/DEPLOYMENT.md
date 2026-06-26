@@ -167,6 +167,6 @@ A: Sequences are automatically truncated to 1000 timesteps (configurable via `ma
 ## References
 
 - **Experiments**: See [EXPERIMENTS.md](EXPERIMENTS.md) for full architecture comparison
-- **Training Code**: [train_production_model.py](train_production_model.py)
-- **Inference Code**: [predict.py](predict.py)
+- **Training Code**: [train_production_model.py](../../train_production_model.py)
+- **Inference Code**: [predict.py](../../predict.py)
 - **Dataset**: NASA N-CMAPSS (rul_datasets library)

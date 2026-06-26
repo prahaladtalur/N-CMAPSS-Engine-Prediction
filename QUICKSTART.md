@@ -1,280 +1,62 @@
-# Quick Start Guide
-## Train Your First RUL Prediction Model in 5 Minutes
+# Quick Start
 
-This guide gets you from zero to trained model in the fastest way possible.
+This is the shortest path from a clean clone to a reproducible N-CMAPSS training run.
 
----
-
-## 1. Installation (2 minutes)
+## 1. Install
 
 ```bash
-# Clone the repository
 git clone https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction.git
 cd N-CMAPSS-Engine-Prediction
 
-# Install dependencies
-pip install uv          # Install uv package manager
-uv sync                 # Install all project dependencies
-
-# Verify installation
-python train_model.py --list-models
+pip install uv
+uv sync --all-extras
 ```
 
-**Expected output**: List of 20 available models
-
----
-
-## 2. Train the Best Model (3 minutes)
+## 2. Verify The Model Registry
 
 ```bash
-# Train MSTCN (winner of our 20-model benchmark)
-python train_model.py \
+uv run python train_model.py --list-models
+```
+
+## 3. Train A Single Model
+
+```bash
+WANDB_MODE=offline uv run python train_model.py \
   --model mstcn \
+  --fd 1 \
   --epochs 30 \
-  --batch-size 64 \
-  --max-seq-length 1000 \
-  --fd 1
-
-# Takes ~3 minutes on modern hardware
+  --batch-size 32 \
+  --max-seq-length 1000
 ```
 
-**What happens**:
-1. ✅ Downloads N-CMAPSS FD1 dataset (~100MB, cached for future runs)
-2. ✅ Trains MSTCN model for 30 epochs with early stopping
-3. ✅ Generates training curves, prediction plots, error analysis
-4. ✅ Logs metrics to W&B
-
-**Expected results**:
-- RMSE: ~6.8-7.5 cycles
-- R²: ~0.88-0.90
-- Accuracy@20: >98%
-
----
-
-## 3. View Results
-
-After training completes, check:
-
-### Training Logs
-```bash
-# See test set metrics
-grep "RMSE:" wandb/latest-run/logs/debug.log
-```
-
-### Visualizations
-```bash
-# Results saved to:
-ls results/mstcn-run/
-# Output:
-# - training_history.png      (loss curves)
-# - predictions.png            (true vs predicted scatter plot)
-# - error_distribution.png     (histogram of errors)
-```
-
-### W&B Dashboard
-```bash
-# Open your W&B project in the browser
-wandb status
-```
-
-If you want a local-only run instead, prefix the training command with `WANDB_MODE=offline`.
-
----
-
-## 4. Compare Multiple Models (Optional)
+## 4. Reproduce The Controlled Benchmark
 
 ```bash
-# Compare top 3 models
-python train_model.py \
-  --compare \
-  --models mstcn transformer wavenet \
+WANDB_MODE=offline uv run python scripts/benchmark_apples_to_apples.py \
+  --fd 1 \
   --epochs 30 \
-  --batch-size 64 \
-  --max-seq-length 1000 \
-  --fd 1
-
-# Takes ~9 minutes (3 min × 3 models)
+  --max-sequence-length 1000 \
+  --batch-size 32 \
+  --patience-early-stop 6 \
+  --patience-lr-reduce 3 \
+  --fixed-metric-max-rul 125 \
+  --models wavenet cnn_gru mstcn
 ```
 
-**Results**:
-- Comparison plot: `results/comparison/model_comparison.png`
-- Individual metrics for each model
-- Best model automatically identified
+Outputs are written under `benchmark_results/apples_to_apples/` and include `results.csv`, `results.json`, and `report.md`.
 
----
-
-## 5. Ensemble Predictions (Best Accuracy - Optional)
-
-For maximum accuracy, use ensemble of top 3 models:
+## 5. Build The Paper
 
 ```bash
-# Step 1: Prepare ensemble models (one-time setup, ~9 minutes)
-python scripts/prepare_ensemble.py
-
-# Step 2: Run ensemble predictions
-python predict.py --ensemble --fd 1
-
-# Expected improvement: 10-15% better than single model (RMSE ~6.5)
+make -C paper
 ```
 
-**Why ensemble?** Combines MSTCN + Transformer + WaveNet predictions with intelligent weighting for maximum accuracy.
+The generated manuscript is `paper/main.pdf`.
 
-See [ENSEMBLE_GUIDE.md](ENSEMBLE_GUIDE.md) for complete guide.
-
-## 6. Production Deployment (Optional)
-
-Once you have a trained model, deploy it:
+## Useful Checks
 
 ```bash
-# Single model prediction
-python predict.py --model-path models/production/mstcn_model.keras --fd 1
-
-# Or use Python API
+uv run black --check src/ tests/ train_model.py scripts/
+uv run mypy src/ train_model.py
+WANDB_MODE=offline uv run pytest tests/test_metrics.py tests/test_models.py -q
 ```
-
-```python
-from predict import RULPredictor
-import numpy as np
-
-# Single model
-predictor = RULPredictor(model_path="models/production/mstcn_model.keras")
-
-# Or ensemble (best accuracy)
-predictor = RULPredictor(ensemble=True)
-
-# Make prediction
-test_sequence = np.random.randn(1000, 32)  # Your sensor data
-result = predictor.predict_single(test_sequence)
-
-print(f"Predicted RUL: {result['prediction']:.2f} cycles")
-print(f"Confidence: {result['confidence']}")
-```
-
-See [ENSEMBLE_GUIDE.md](ENSEMBLE_GUIDE.md) for full deployment guide.
-
----
-
-## Troubleshooting
-
-### Issue: "ModuleNotFoundError"
-```bash
-# Solution: Run uv sync
-uv sync
-```
-
-### Issue: "Out of Memory"
-```bash
-# Solution: Reduce batch size
-python train_model.py --model mstcn --batch-size 32 --max-seq-length 1000
-```
-
-### Issue: "W&B API key error"
-```bash
-# Solution: log in to W&B, or use offline mode only if you want a local-only run
-wandb login
-# Optional local-only fallback:
-WANDB_MODE=offline python train_model.py --model mstcn
-```
-
-### Issue: Training very slow
-```bash
-# Check: Are you using short sequences?
-# ✅ Correct:   --max-seq-length 1000
-# ❌ Incorrect: No flag (uses full 20,294 timesteps = very slow!)
-```
-
----
-
-## Next Steps
-
-### Learn More
-- [README.md](README.md) - Full documentation
-- [MSTCN_EXPLAINED.md](MSTCN_EXPLAINED.md) - How the best model works
-- [FINAL_ANALYSIS_REPORT.md](FINAL_ANALYSIS_REPORT.md) - Complete benchmark
-- [CLAUDE.md](CLAUDE.md) - Developer guide
-
-### Explore Models
-```bash
-# List all 20 models
-python train_model.py --list-models
-
-# Get recommendations
-python train_model.py --recommend
-
-# Train different architectures
-python train_model.py --model transformer
-python train_model.py --model wavenet
-python train_model.py --model atcn
-```
-
-### Try Different Datasets
-```bash
-# N-CMAPSS has 7 subsets (FD1-FD7)
-python train_model.py --model mstcn --fd 2
-python train_model.py --model mstcn --fd 3
-# ... etc
-```
-
-### Hyperparameter Tuning
-```bash
-# Experiment with different settings
-python train_model.py --model mstcn \
-  --epochs 50 \
-  --units 128 \
-  --dropout 0.3 \
-  --lr 0.0005
-```
-
-### Contribute
-Found a better architecture? Improved results? Open a PR!
-
-1. Create an issue describing your improvement
-2. Create a feature branch
-3. Add your model to `src/models/architectures.py`
-4. Run `make check` before committing
-5. Open a PR with results
-
----
-
-## Performance Expectations
-
-Based on our comprehensive 20-model benchmark:
-
-| Model | RMSE | R² | Training Time | When to Use |
-|-------|------|-----|---------------|-------------|
-| **MSTCN** | **6.80** | **0.90** | 3 min | **Production (best overall)** |
-| Transformer | 6.82 | 0.90 | 3 min | Edge devices (fewer params) |
-| WaveNet | 6.84 | 0.90 | 3 min | Speed-critical apps |
-| ATCN | 7.01 | 0.89 | 3 min | Good alternative |
-| TCN | 16.13 | 0.44 | 25 min* | Baseline comparison |
-| LSTM | 22.28 | -0.07 | 30 min* | ❌ Don't use |
-
-*Without `--max-seq-length` flag (uses full sequences)
-
----
-
-## Key Takeaways
-
-✅ **Use MSTCN** for best results (RMSE 6.80, R² 0.90)
-✅ **Always set** `--max-seq-length 1000` (58% better performance!)
-✅ **30 epochs** is sufficient (early stopping around epoch 25-35)
-✅ **Batch size 64** works well for most systems
-✅ **Use offline W&B** if you don't have an API key
-
-❌ **Avoid traditional RNNs** (LSTM/GRU) - they have negative R² scores
-❌ **Don't use full sequences** (20K+ timesteps) - very slow, poor results
-❌ **Don't train 100+ epochs** - marginal gains, 3x longer
-
----
-
-## Getting Help
-
-- **Documentation**: Start with [README.md](README.md)
-- **Issues**: https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction/issues
-- **Model details**: See [MSTCN_EXPLAINED.md](MSTCN_EXPLAINED.md)
-
----
-
-**Happy modeling!** 🚀
-
-*Last updated: March 4, 2026*

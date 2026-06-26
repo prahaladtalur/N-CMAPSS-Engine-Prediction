@@ -231,7 +231,9 @@ def main() -> None:
     args = parser.parse_args()
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    output_dir = args.output_dir / f"fd{args.fd}_ep{args.epochs}_len{args.max_sequence_length}_{timestamp}"
+    output_dir = (
+        args.output_dir / f"fd{args.fd}_ep{args.epochs}_len{args.max_sequence_length}_{timestamp}"
+    )
     results = run_benchmark(args)
     save_results(results, output_dir)
     print(f"\nSaved benchmark to {output_dir}")

@@ -175,6 +175,9 @@ class LRLSAttention(layers.Layer):
         return tf.cast(mask, tf.float32)
 
     def call(self, inputs: tf.Tensor, training: bool | None = None) -> tf.Tensor:
+        if self.mha is None or self.ffn is None:
+            raise RuntimeError("LRLSAttention must be built before call().")
+
         seq_length = tf.shape(inputs)[1]
 
         # Create sparse attention mask

@@ -90,4 +90,4 @@ if rul < 20:
 
 - Full docs: [DEPLOYMENT.md](DEPLOYMENT.md)
 - Research: [EXPERIMENTS.md](EXPERIMENTS.md)
-- Code: [train_model.py](train_model.py)
+- Code: [train_model.py](../../train_model.py)

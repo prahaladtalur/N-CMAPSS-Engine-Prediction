@@ -355,7 +355,7 @@ Confidence: LOW (std: 8.5)
 
 - [FINAL_ANALYSIS_REPORT.md](FINAL_ANALYSIS_REPORT.md) - Complete 20-model benchmark
 - [MSTCN_EXPLAINED.md](MSTCN_EXPLAINED.md) - How the best model works
-- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+- [QUICKSTART.md](../../QUICKSTART.md) - Quick start guide
 
 ---
 

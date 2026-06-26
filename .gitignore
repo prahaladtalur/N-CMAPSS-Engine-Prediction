@@ -15,6 +15,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 *.egg-info/
 dist/
 build/
@@ -40,14 +41,33 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.claude/
 *.swp
 
 # Environment variables
 .env
 .env.local
+.env.*
+!.env.example
 
 # Results
 results/
 
 # Wandb
 wandb/
+
+# Coverage and local tooling
+.coverage
+htmlcov/
+.ruff_cache/
+
+# LaTeX intermediates
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+paper/*.toc

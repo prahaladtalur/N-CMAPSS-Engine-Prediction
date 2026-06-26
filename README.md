@@ -1,50 +1,86 @@
 # N-CMAPSS Engine RUL Prediction
 
-Research-grade remaining useful life (RUL) prediction for NASA turbofan engines.
+[![CI](https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction/actions/workflows/ci.yml/badge.svg)](https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction/actions/workflows/ci.yml)
 
-This repository is built around a single reproducible training pipeline for the N-CMAPSS dataset: one data loader, one CLI, one model registry, one metrics stack, and W&B logging for every serious run. The goal is simple: compare modern time-series architectures under controlled conditions and close the gap to published N-CMAPSS results.
+Deep-learning benchmarks for remaining useful life (RUL) prediction on NASA's N-CMAPSS turbofan dataset. The repository contains a reproducible training pipeline, a shared model registry, controlled benchmark outputs, and a paper draft describing the results.
 
-## Current Results
+The main goal is not to present a single overfit leaderboard number. It is to compare recurrent, convolutional, transformer, WaveNet, and multi-scale temporal-attention models under the same preprocessing, loss, training budget, and metrics.
 
-| Claim | Model | Split / Protocol | RMSE | R2 | Accuracy@20 | Evidence |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| Best historical tuned run | CNN-GRU + asymmetric loss | FD1, tuned recipe | **6.44** | **0.91** | **99.1%** | [EXPERIMENTS.md](EXPERIMENTS.md) |
-| Best fair FD1 benchmark | WaveNet | 30 epochs, seq=1000, batch=32 | **6.523** | **0.9086** | **98.83%** | [FD1 report](benchmark_results/apples_to_apples/fd1_ep30_len1000_20260425_090057/report.md) |
-| Best fair FD2 benchmark | MSTCN | 30 epochs, seq=1000, batch=32 | **6.495** | **0.8897** | **99.01%** | [FD2 report](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md) |
-| Best FD2 threshold accuracy | WaveNet | 30 epochs, seq=1000, batch=32 | 6.739 | 0.8813 | **99.50%** | [FD2 report](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md) |
+## Paper
 
-The closest verified published reference we found reports **RMSE 6.20** on N-CMAPSS DS02. Under the repo's FD2 apples-to-apples check, **MSTCN is 0.295 RMSE away, or about 4.8%**. That is the most defensible current paper-gap number in this repository.
+- Draft PDF: [paper/main.pdf](paper/main.pdf)
+- LaTeX source: [paper/main.tex](paper/main.tex)
+- Canonical result map: [paper/state/canonical_results.md](paper/state/canonical_results.md)
 
-Paper reference: Jean-Pierre et al., PHM Society, "LSTM and Transformers based methods for Remaining Useful Life prediction considering censored data" ([PDF](https://papers.phmsociety.org/index.php/ijphm/article/download/4260/2619)).
+Build the paper with:
 
-W&B project for the current controlled benchmarks: [n-cmapss-a2a](https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a)
+```bash
+make -C paper
+```
 
-## What This Repo Does
+The paper intentionally separates supported findings from open ablations. In particular, sequence length and architecture are not fully disentangled, and asymmetric loss is framed as a motivated design choice rather than a proven empirical improvement.
 
-- Downloads and caches N-CMAPSS splits through `src/data/load_data.py`.
-- Trains 20 registered neural architectures through `train_model.py`.
-- Logs metrics, configs, plots, and benchmark summaries to Weights & Biases.
-- Computes RUL-specific metrics: RMSE, MAE, R2, PHM score, asymmetric loss, Accuracy@10/15/20, and normalized RMSE.
-- Provides strict apples-to-apples harnesses for comparing top models under the same split, training budget, loss, and metric denominator.
+## Controlled Results
+
+These are the primary apples-to-apples rows used for paper claims.
+
+| Split | Model | Protocol | RMSE | R2 | PHM | Accuracy@20 |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| FD1 | WaveNet | 30 epochs, T=1000, batch=32 | **6.523** | **0.9086** | **0.7256** | **98.83** |
+| FD1 | CNN-GRU | 30 epochs, T=1000, batch=32 | 7.006 | 0.8946 | 0.8396 | 98.53 |
+| FD1 | MSTCN | 30 epochs, T=1000, batch=32 | 7.604 | 0.8758 | 1.0033 | 98.53 |
+| FD2 | MSTCN | 30 epochs, T=1000, batch=32 | **6.495** | **0.8897** | **0.5755** | 99.01 |
+| FD2 | WaveNet | 30 epochs, T=1000, batch=32 | 6.739 | 0.8813 | 0.6756 | **99.50** |
+| FD2 | CNN-GRU | 30 epochs, T=1000, batch=32 | 19.812 | -0.0265 | 5.1463 | 59.41 |
+
+Reports:
+
+- [FD1 controlled benchmark](benchmark_results/apples_to_apples/fd1_ep30_len1000_20260425_090057/report.md)
+- [FD2 controlled benchmark](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md)
+
+## Main Findings
+
+- Short operational windows around 1000 timesteps are effective on N-CMAPSS, while full-flight recurrent baselines perform much worse. This is a directional finding because the current full-length and short-window rows also differ by architecture family.
+- MSTCN is in the top performance cluster, ranks third on controlled FD1, and is best by RMSE on FD2. The current evidence supports competitiveness, not universal dominance.
+- Asymmetric MSE is used because late RUL predictions are operationally more dangerous than early predictions. A symmetric-loss baseline and alpha sweep remain future work.
+
+## Installation
+
+This project uses `uv` for reproducible Python environments.
+
+```bash
+git clone https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction.git
+cd N-CMAPSS-Engine-Prediction
+
+pip install uv
+uv sync --all-extras
+```
+
+The N-CMAPSS data is downloaded through `rul-datasets` when training scripts run. Raw data, trained models, local W&B runs, and generated result directories are intentionally ignored by Git.
 
 ## Quick Start
 
-```bash
-pip install uv
-uv sync
+List the registered models:
 
-python train_model.py --list-models
-python train_model.py --model mstcn --fd 1 --epochs 30 --max-seq-length 1000
+```bash
+uv run python train_model.py --list-models
 ```
 
-Runs log to W&B online by default when you are logged in. Use `WANDB_MODE=offline` only for local-only experiments.
-
-## Reproduce The Main Benchmarks
-
-FD1 controlled benchmark:
+Train one model on FD1 with the standard short-window setup:
 
 ```bash
-python scripts/benchmark_apples_to_apples.py \
+uv run python train_model.py \
+  --model mstcn \
+  --fd 1 \
+  --epochs 30 \
+  --batch-size 32 \
+  --max-seq-length 1000
+```
+
+Run the controlled FD1 benchmark used in the paper:
+
+```bash
+uv run python scripts/benchmark_apples_to_apples.py \
   --fd 1 \
   --epochs 30 \
   --max-sequence-length 1000 \
@@ -55,117 +91,54 @@ python scripts/benchmark_apples_to_apples.py \
   --models wavenet cnn_gru mstcn
 ```
 
-FD2 / DS02-style controlled benchmark:
+## Model Registry
 
-```bash
-python scripts/benchmark_apples_to_apples.py \
-  --fd 2 \
-  --epochs 30 \
-  --max-sequence-length 1000 \
-  --batch-size 32 \
-  --patience-early-stop 6 \
-  --patience-lr-reduce 3 \
-  --fixed-metric-max-rul 125 \
-  --models wavenet cnn_gru mstcn
-```
-
-Each run writes `results.csv`, `results.json`, and `report.md` under `benchmark_results/apples_to_apples/`, and each model run is logged to W&B.
-
-## Why The Apples-To-Apples Harness Matters
-
-RUL papers often differ in dataset subset, censoring, windowing, target clipping, target scaling, sensor selection, normalization, and metric denominator. Small protocol differences can produce large apparent gains.
-
-The apples-to-apples benchmark controls the parts we can control locally:
-
-| Control | Current setting |
-| --- | --- |
-| Dataset selector | `--fd 1` or `--fd 2` |
-| Epoch budget | `30` |
-| Sequence length | `1000` |
-| Batch size | `32` |
-| Loss | `asymmetric_mse`, alpha `2.0` |
-| Optimizer | Adam |
-| Metric denominator | fixed max RUL `125` for normalized RMSE |
-| Model set | WaveNet, CNN-GRU, MSTCN |
-
-Use the fair benchmark tables for paper claims. Use historical tuned results for engineering direction and ablation discussion.
-
-## Model Zoo
-
-Run `python train_model.py --list-models` for the current registry.
+Run `uv run python train_model.py --list-models` for the authoritative list.
 
 | Family | Models |
 | --- | --- |
 | Convolutional / temporal CNN | `mstcn`, `atcn`, `cata_tcn`, `ttsnet`, `tcn`, `wavenet` |
-| Attention | `transformer`, `attention_lstm`, `mdfa`, `cnn_lstm_attention` |
+| Attention / transformer | `transformer`, `attention_lstm`, `mdfa`, `cnn_lstm_attention`, `star_transformer`, `sparse_transformer_bigrcu` |
 | Hybrid CNN-RNN | `cnn_gru`, `cnn_lstm`, `inception_lstm`, `resnet_lstm` |
 | Recurrent | `lstm`, `bilstm`, `gru`, `bigru` |
 | Baseline | `mlp` |
 
-## Metrics
-
-| Metric | Meaning |
-| --- | --- |
-| RMSE | Main error metric in cycles. Lower is better. |
-| MAE | Mean absolute error in cycles. Lower is better. |
-| R2 | Variance explained by the model. Higher is better. |
-| PHM score | Safety-oriented score that penalizes late predictions more heavily. Lower is better. |
-| Accuracy@N | Share of predictions within +/- N cycles. Higher is better. |
-| RMSE(norm,fixed) | RMSE divided by a fixed denominator, currently `125`, for consistent internal paper-style comparison. |
-
-Do not compare normalized RMSE numbers across papers unless the denominator and preprocessing are the same.
-
-## W&B
-
-The main benchmark project is:
+## Repository Layout
 
 ```text
-https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a
+.
+|-- src/                      # data loading, model registry, metrics, visualization
+|-- tests/                    # unit tests for models, metrics, prediction, training helpers
+|-- scripts/                  # benchmark, tuning, comparison, and reporting scripts
+|-- benchmark_results/        # committed benchmark summaries used by the paper
+|-- paper/                    # LaTeX manuscript, figures, references, and evidence map
+|-- docs/                     # supporting documentation and archived historical reports
+|-- train_model.py            # main training CLI
+|-- predict.py                # inference CLI and RULPredictor API
+|-- pyproject.toml
+`-- uv.lock
 ```
 
-Useful runs:
-
-| Run | Model | Split | Link |
-| --- | --- | --- | --- |
-| `kxzt7837` | WaveNet | FD1 | https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a/runs/kxzt7837 |
-| `p3id5hq0` | MSTCN | FD2 | https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a/runs/p3id5hq0 |
-| `79nsc4w1` | WaveNet | FD2 | https://wandb.ai/ptalur09-eastlake-high-school/n-cmapss-a2a/runs/79nsc4w1 |
-
-When reading W&B:
-
-- Use `Summary` for final test metrics.
-- Use `Charts` for convergence and overfitting.
-- Use `Config` to verify whether two runs are actually comparable.
-- Use benchmark summary runs and local reports for paper tables.
-
-## Project Layout
-
-```text
-N-CMAPSS-Engine-Prediction
-├── src/
-│   ├── data/                # dataset download, cache, split loading
-│   ├── models/              # model registry and architectures
-│   └── utils/               # metrics and visualization helpers
-├── train_model.py           # main training CLI
-├── predict.py               # inference CLI and RULPredictor API
-├── scripts/                 # benchmark, tuning, and reporting helpers
-├── benchmark_results/       # reproducible benchmark outputs
-├── pyproject.toml
-└── uv.lock
-```
-
-## Tests
+## Tests And Checks
 
 ```bash
-make test
-pytest tests/test_metrics.py -v
+uv run black --check src/ tests/ train_model.py scripts/
+uv run mypy src/ train_model.py
+WANDB_MODE=offline uv run pytest tests/ -v --tb=short
 ```
 
-The metric tests cover perfect predictions, known values, edge cases, PHM score asymmetry, and normalized metric scale behavior.
+For a faster smoke check:
 
-## Paper-Safe Summary
+```bash
+WANDB_MODE=offline uv run pytest tests/test_metrics.py tests/test_models.py -q
+```
 
-Use this wording when describing the current result:
+## Notes For Reviewers
 
-> Under a controlled N-CMAPSS FD2 benchmark with 30 epochs, 1000-step windows, asymmetric MSE loss, and a fixed normalized-RMSE denominator of 125, MSTCN achieved RMSE 6.495, MAE 4.660, R2 0.890, and Accuracy@20 99.01%. This is within 0.295 RMSE, or 4.8%, of a verified published N-CMAPSS DS02 result of RMSE 6.20.
+- Historical reports were moved to [docs/archive](docs/archive) because several were written before the final paper synthesis and contain stronger claims than the controlled evidence supports.
+- The committed benchmark outputs are small summaries. Large generated artifacts, model checkpoints, local logs, `.env`, W&B runs, and raw N-CMAPSS data are not committed.
+- This repository is research code, not an aviation-certified maintenance system.
 
+## Citation
+
+If this repository is useful, cite it with the metadata in [CITATION.cff](CITATION.cff).

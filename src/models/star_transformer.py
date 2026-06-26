@@ -100,6 +100,9 @@ class STARBlock(layers.Layer):
         super().build(input_shape)
 
     def call(self, inputs: tf.Tensor, training=None) -> tf.Tensor:
+        if self.sensor_ffn is None:
+            raise RuntimeError("STARBlock must be built before call().")
+
         # --- Stage 1: sensor-wise attention ---
         # Treat each feature/sensor as a token: transpose (B,T,F) → (B,F,T)
         x_sensor = tf.transpose(inputs, perm=[0, 2, 1])  # (B, F, T)
@@ -174,9 +177,9 @@ class STARTransformer(BaseModel):
 
         # Learnable positional embedding
         positions = tf.range(start=0, limit=timesteps, delta=1)
-        pos_emb = layers.Embedding(
-            input_dim=timesteps, output_dim=units, name="pos_embedding"
-        )(positions)
+        pos_emb = layers.Embedding(input_dim=timesteps, output_dim=units, name="pos_embedding")(
+            positions
+        )
         x = x + pos_emb  # broadcast over batch dimension
 
         x = layers.Dropout(dropout_rate, name="input_dropout")(x)

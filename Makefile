@@ -1,4 +1,4 @@
-.PHONY: install install-dev lint format typecheck test check train clean help
+.PHONY: install install-dev lint format typecheck test check train paper clean help
 
 # Default target
 help:
@@ -10,7 +10,8 @@ help:
 	@echo "  make typecheck    - Run mypy type checking"
 	@echo "  make test         - Run unit tests with pytest"
 	@echo "  make check        - Run all checks (lint + typecheck + test)"
-	@echo "  make train        - Train default model (LSTM)"
+	@echo "  make train        - Train a standard MSTCN run"
+	@echo "  make paper        - Build the LaTeX paper"
 	@echo "  make clean        - Remove cache and build artifacts"
 
 # Installation
@@ -22,22 +23,25 @@ install-dev:
 
 # Code quality
 lint:
-	black --check src/ tests/ train_model.py scripts/
+	uv run black --check src/ tests/ train_model.py scripts/
 
 format:
-	black src/ tests/ train_model.py scripts/
+	uv run black src/ tests/ train_model.py scripts/
 
 typecheck:
-	mypy src/ train_model.py
+	uv run mypy src/ train_model.py
 
 test:
-	pytest tests/ -v
+	WANDB_MODE=offline uv run pytest tests/ -v
 
 check: lint typecheck test
 
 # Training
 train:
-	python train_model.py --model lstm --epochs 30
+	WANDB_MODE=offline uv run python train_model.py --model mstcn --fd 1 --epochs 30 --batch-size 32 --max-seq-length 1000
+
+paper:
+	$(MAKE) -C paper
 
 # Cleanup
 clean:

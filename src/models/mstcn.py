@@ -109,6 +109,9 @@ class GlobalFusionAttention(layers.Layer):
         Returns:
             Fused features: (batch_size, timesteps, total_features)
         """
+        if self.scale_weights is None or self.fusion_gate is None:
+            raise RuntimeError("GlobalFusionAttention must be built before call().")
+
         # Apply channel and temporal attention to each scale
         attended_features = []
         for i, features in enumerate(multi_scale_features):

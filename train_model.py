@@ -212,7 +212,9 @@ def transform_targets(
     if scaling != "minmax":
         raise ValueError("Unsupported target scaling. Available: none, minmax")
 
-    y_range = metadata["scale_max"] - metadata["scale_min"]
+    scale_min = float(metadata["scale_min"])
+    scale_max = float(metadata["scale_max"])
+    y_range = scale_max - scale_min
     if y_range == 0:
         zeros = np.zeros_like(y_train_metric, dtype=np.float32)
         y_val_scaled = (
@@ -226,7 +228,7 @@ def transform_targets(
     def _scale(values: Optional[np.ndarray]) -> Optional[np.ndarray]:
         if values is None:
             return None
-        return ((values - metadata["scale_min"]) / y_range).astype(np.float32)
+        return ((values - scale_min) / y_range).astype(np.float32)
 
     return _scale(y_train_metric), _scale(y_val_metric), _scale(y_test_metric), metadata
 
@@ -237,8 +239,8 @@ def inverse_transform_targets(y: np.ndarray, metadata: Dict[str, Any]) -> np.nda
     if metadata.get("scaling") != "minmax":
         return values
 
-    scale_min = metadata["scale_min"]
-    scale_max = metadata["scale_max"]
+    scale_min = float(metadata["scale_min"])
+    scale_max = float(metadata["scale_max"])
     return values * (scale_max - scale_min) + scale_min
 
 
@@ -860,6 +862,8 @@ def train_model(
     # Build model
     print(f"\nBuilding {model_name} model...")
     model_kwargs = config.get("model_kwargs", {})
+    if not isinstance(model_kwargs, dict):
+        raise TypeError("model_kwargs must be a dictionary")
     if model_kwargs:
         build_signature = inspect.signature(ModelRegistry.get(model_name).build)
         accepted_kwargs = set(build_signature.parameters)
@@ -925,7 +929,7 @@ def train_model(
 
     # Prepare validation data for training
     validation_data = (X_val, y_val_fit) if X_val is not None and y_val_fit is not None else None
-    monitor_metric = config["monitor_metric"]
+    monitor_metric = str(config["monitor_metric"])
     if monitor_metric == "auto":
         monitor_metric = "val_loss" if validation_data else "loss"
     if validation_data is None and monitor_metric.startswith("val_"):
@@ -1046,14 +1050,14 @@ def train_model(
         print(format_metrics(test_metrics))
 
         # Log all metrics to wandb with test/ prefix
-        wandb_metrics = {f"test/{k}": v for k, v in test_metrics.items()}
+        wandb_metrics: Dict[str, Any] = {f"test/{k}": v for k, v in test_metrics.items()}
 
         # SOTA benchmarks from the MDFA paper are intentionally not compared
         # against this N-CMAPSS run. Those reported normalized targets appear
         # to use a C-MAPSS-style benchmark/denominator, so logging a gap here
         # would imply dataset comparability that we have not established.
-        sota_dataset = config.get("sota_target_dataset", "cmapss")
-        current_dataset = config.get("dataset", "ncmapss")
+        sota_dataset = str(config.get("sota_target_dataset", "cmapss"))
+        current_dataset = str(config.get("dataset", "ncmapss"))
         SOTA_TARGETS = {
             "rmse_normalized": 0.032,
             "mae_normalized": 0.026,

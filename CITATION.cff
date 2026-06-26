@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite it using this metadata."
+title: "N-CMAPSS Engine RUL Prediction"
+authors:
+  - family-names: "Talur"
+    given-names: "Prahalad"
+repository-code: "https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction"
+date-released: "2026-06-26"
+version: "0.1.0"
+abstract: "Deep-learning benchmarks and paper artifacts for remaining useful life prediction on NASA's N-CMAPSS turbofan dataset."
+keywords:
+  - "remaining useful life"
+  - "N-CMAPSS"
+  - "prognostics"
+  - "turbofan engines"
+  - "deep learning"

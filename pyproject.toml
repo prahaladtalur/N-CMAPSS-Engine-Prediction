@@ -1,7 +1,7 @@
 [project]
 name = "n-cmapss-engine-prediction"
 version = "0.1.0"
-description = "Jet Engine Remaining Useful Life Prediction using NASA C-MAPSS dataset"
+description = "Deep-learning benchmarks for remaining useful life prediction on NASA N-CMAPSS turbofan data"
 requires-python = ">=3.8"
 dependencies = [
     "numpy",

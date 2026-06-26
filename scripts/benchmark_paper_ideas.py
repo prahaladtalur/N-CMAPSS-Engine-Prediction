@@ -164,7 +164,9 @@ def build_base_config(epochs: int) -> Dict[str, Any]:
     }
 
 
-def merge_config(base_config: Dict[str, Any], overrides: Dict[str, Any], epochs: int) -> Dict[str, Any]:
+def merge_config(
+    base_config: Dict[str, Any], overrides: Dict[str, Any], epochs: int
+) -> Dict[str, Any]:
     """Merge configs while keeping the CLI epoch budget authoritative."""
     merged = {**base_config, **overrides}
     merged["epochs"] = epochs
