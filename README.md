@@ -38,8 +38,19 @@ These are the primary three-seed FD1 rows used for the final paper claims. They 
 Reports:
 
 - [Review-response FD1 controlled suite](benchmark_results/review_response/fd1_review_20260627_191300/report.md)
+- [SOTA-chase best-seed sweep](benchmark_results/sota_chase/fd1_review_20260628_120711/report.md)
 - [Earlier FD1 controlled benchmark](benchmark_results/apples_to_apples/fd1_ep30_len1000_20260425_090057/report.md)
 - [Earlier FD2 controlled benchmark](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md)
+
+## Best Single Run
+
+For leaderboard-style comparison only, the best individual FD1 run found so far is:
+
+| Model | Setting | Seed | RMSE | R2 | Accuracy@20 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| WaveNet | T=1000, asymmetric MSE, 32 features | 47 | **6.197** | **0.9175** | **99.71** |
+
+This is intentionally reported separately from the controlled three-seed table because it is a best-seed result, not a robust mean/std claim.
 
 ## Main Findings
 

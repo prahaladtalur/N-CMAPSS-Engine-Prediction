@@ -1,0 +1,38 @@
+{
+  "fd1_all_maxrul65_res1": {
+    "fd": 1,
+    "feature_set": "all",
+    "reader_max_rul": 65,
+    "resolution_seconds": 1,
+    "dev": {
+      "units": 5,
+      "cycles": 459,
+      "timesteps": 20294,
+      "features": 32,
+      "rul_min": 0.0,
+      "rul_max": 65.0,
+      "rul_mean": 41.63398692810458,
+      "rul_std": 21.779470545985404
+    },
+    "val": {
+      "units": 1,
+      "cycles": 94,
+      "timesteps": 20294,
+      "features": 32,
+      "rul_min": 0.0,
+      "rul_max": 65.0,
+      "rul_mean": 42.180851063829785,
+      "rul_std": 21.811066274752545
+    },
+    "test": {
+      "units": 4,
+      "cycles": 341,
+      "timesteps": 20294,
+      "features": 32,
+      "rul_min": 0.0,
+      "rul_max": 65.0,
+      "rul_mean": 39.83870967741935,
+      "rul_std": 21.57820999810143
+    }
+  }
+}
