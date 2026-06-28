@@ -8,7 +8,30 @@ import numpy as np
 from rul_datasets.reader.ncmapss import NCmapssReader
 
 
-def download_ncmapss(data_dir: str = "data/raw", fd: int = 1, cache: bool = True) -> NCmapssReader:
+FEATURE_SETS = {
+    "all": list(range(32)),
+    # Reader order: 4 operating conditions, 14 physical sensors, 14 virtual sensors.
+    "physical": list(range(18)),
+}
+
+
+def resolve_feature_select(feature_set: str) -> List[int]:
+    """Return N-CMAPSS feature indices for a named feature set."""
+    if feature_set not in FEATURE_SETS:
+        raise ValueError(
+            f"Unsupported feature_set '{feature_set}'. Available: {sorted(FEATURE_SETS)}"
+        )
+    return FEATURE_SETS[feature_set]
+
+
+def download_ncmapss(
+    data_dir: str = "data/raw",
+    fd: int = 1,
+    cache: bool = True,
+    max_rul: int = 65,
+    feature_set: str = "all",
+    resolution_seconds: int = 1,
+) -> NCmapssReader:
     """
     Download and prepare N-CMAPSS dataset.
 
@@ -16,6 +39,10 @@ def download_ncmapss(data_dir: str = "data/raw", fd: int = 1, cache: bool = True
         data_dir: Directory to cache data
         fd: Dataset sub-index (1-7)
         cache: Whether to cache prepared arrays
+        max_rul: Maximum RUL cap applied by the reader
+        feature_set: "all" for 32 features or "physical" for operating conditions
+            plus physical sensors only
+        resolution_seconds: Reader downsampling interval in seconds
 
     Returns:
         NCmapssReader instance
@@ -23,15 +50,28 @@ def download_ncmapss(data_dir: str = "data/raw", fd: int = 1, cache: bool = True
     os.makedirs(data_dir, exist_ok=True)
     os.environ["RUL_DATASETS_DATA_ROOT"] = os.path.abspath(data_dir)
 
-    reader = NCmapssReader(fd=fd)
+    reader = NCmapssReader(
+        fd=fd,
+        max_rul=max_rul,
+        feature_select=resolve_feature_select(feature_set),
+        resolution_seconds=resolution_seconds,
+    )
     reader.prepare_data(cache=cache)
 
-    print(f"✓ N-CMAPSS FD{fd} prepared and cached in: {data_dir}")
+    print(
+        f"✓ N-CMAPSS FD{fd} prepared and cached in: {data_dir} "
+        f"(max_rul={max_rul}, feature_set={feature_set}, resolution_seconds={resolution_seconds})"
+    )
     return reader
 
 
 def get_datasets(
-    fd: int = 1, data_dir: str = "data/raw", cache: bool = True
+    fd: int = 1,
+    data_dir: str = "data/raw",
+    cache: bool = True,
+    max_rul: int = 65,
+    feature_set: str = "all",
+    resolution_seconds: int = 1,
 ) -> Tuple[Tuple[List, List], Optional[Tuple[List, List]], Tuple[List, List]]:
     """
     Load train/dev, validation, and test splits.
@@ -40,13 +80,24 @@ def get_datasets(
         fd: N-CMAPSS sub-dataset index (1-7)
         data_dir: Data cache directory
         cache: Whether to cache processed data
+        max_rul: Maximum RUL cap applied by the reader
+        feature_set: "all" for 32 features or "physical" for operating conditions
+            plus physical sensors only
+        resolution_seconds: Reader downsampling interval in seconds
 
     Returns:
         ((dev_X, dev_y), (val_X, val_y), (test_X, test_y))
         Each X is a list of arrays with shape (num_cycles, timesteps, num_sensors)
         Each y is a list of arrays with RUL values
     """
-    reader = download_ncmapss(data_dir=data_dir, fd=fd, cache=cache)
+    reader = download_ncmapss(
+        data_dir=data_dir,
+        fd=fd,
+        cache=cache,
+        max_rul=max_rul,
+        feature_set=feature_set,
+        resolution_seconds=resolution_seconds,
+    )
 
     # Load splits
     dev_X, dev_y = reader.load_split("dev")

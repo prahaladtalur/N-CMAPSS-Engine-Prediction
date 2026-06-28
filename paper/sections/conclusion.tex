@@ -1,13 +1,13 @@
 \section{Conclusion}
 
-We presented a deep-learning pipeline for variable-length N-CMAPSS turbofan RUL prediction and used it to compare recurrent, convolutional, hybrid, transformer, and multi-scale attention models under a common preprocessing, training, and evaluation harness. The best controlled FD1 row reaches RMSE 6.523 (T1), and full-flight recurrent baselines remain far worse (T20: 22.28; T21: 22.20), although this effect is confounded with architecture. MSTCN ranks third on controlled FD1 (T3: 7.604) but first by RMSE on FD2 (T11: 6.495), placing it in the top attention/dilated-convolution cluster rather than above every alternative. Asymmetric MSE is a safety-motivated design choice aligned with the PHM scoring tradition~\cite{saxena2008damage} and recent loss-design work~\cite{mpm2024loss}; it is not yet a demonstrated empirical improvement over symmetric MSE in this benchmark. The code, configs, benchmark outputs, and W\&B traces provide a reproducible basis for extending this comparison.
+We presented a deep-learning pipeline for variable-length N-CMAPSS turbofan RUL prediction and used it to compare recurrent, convolutional, hybrid, transformer, and multi-scale attention models under a common preprocessing, training, and evaluation harness. The final review-response suite is a simulation study on FD1 with three seeds, reader max RUL 65, and explicit documentation of virtual-sensor use. WaveNet is the strongest controlled FD1 model tested here (RMSE $6.868\pm0.299$ at $T{=}1000$), MSTCN is stable and competitive (RMSE $7.890\pm0.526$), and CNN-GRU is not reliable because two seeds collapse. A matched WaveNet length sweep shows that short windows are effective across 100--1000 timesteps, with $T{=}500$ best by mean RMSE ($6.690\pm0.173$). Asymmetric MSE is modestly better than symmetric MSE in this limited suite, but broader loss and architecture ablations remain open. The code, configs, benchmark outputs, and W\&B traces provide a reproducible basis for extending this comparison; the results should not be read as direct evidence for real-world commercial-engine deployment or as a state-of-the-art claim against studies using different protocols.
 
 \subsection*{Limitations}
 
 \begin{itemize}
-  \item The sequence-length result is not a clean single-architecture ablation; a matched sweep over 100, 250, 500, 1000, 2000, 5000, and full-flight inputs is needed.
+  \item The sequence-length result is now matched for 100, 250, 500, and 1000 timesteps, but still needs 2000, 5000, and full-flight inputs under the same architecture.
   \item MSTCN component attribution is incomplete; the multi-scale branches and global fusion attention should be removed independently.
-  \item The asymmetric-loss claim needs a controlled symmetric-MSE baseline, an $\alpha$ sensitivity sweep, and a direct asymmetric-MSE versus asymmetric-Huber comparison.
+  \item The asymmetric-loss result is limited to WaveNet on FD1; it needs an $\alpha$ sensitivity sweep and replication across architectures and subsets.
   \item Evaluation is currently concentrated on FD1 and FD2; FD3--FD7 remain necessary for broad N-CMAPSS generalization claims.
   \item Comparisons to STAR, TTSNet, and Xu et al.'s MSTCN are architectural rather than apples-to-apples because those papers report primarily on C-MAPSS, not N-CMAPSS.
 \end{itemize}

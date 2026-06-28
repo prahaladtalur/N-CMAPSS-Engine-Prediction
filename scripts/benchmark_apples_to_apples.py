@@ -79,6 +79,9 @@ def build_config(args: argparse.Namespace) -> Dict[str, Any]:
         "monitor_metric": "val_rmse",
         "monitor_mode": "min",
         "dataset": "ncmapss",
+        "reader_max_rul": args.reader_max_rul,
+        "feature_set": args.feature_set,
+        "resolution_seconds": args.resolution_seconds,
         "sota_target_dataset": "cmapss",
         "fixed_metric_max_rul": args.fixed_metric_max_rul,
     }
@@ -88,7 +91,12 @@ def run_benchmark(args: argparse.Namespace) -> List[Dict[str, Any]]:
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
     print(f"Loading N-CMAPSS FD{args.fd}...")
-    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd)
+    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(
+        fd=args.fd,
+        max_rul=args.reader_max_rul,
+        feature_set=args.feature_set,
+        resolution_seconds=args.resolution_seconds,
+    )
     val_X, val_y = val_pair if val_pair else (None, None)
 
     base_config = build_config(args)
@@ -210,6 +218,9 @@ def save_results(results: List[Dict[str, Any]], output_dir: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a strict apples-to-apples benchmark.")
     parser.add_argument("--fd", type=int, default=1)
+    parser.add_argument("--reader-max-rul", type=int, default=65)
+    parser.add_argument("--feature-set", choices=["all", "physical"], default="all")
+    parser.add_argument("--resolution-seconds", type=int, default=1)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--max-sequence-length", type=int, default=250)
     parser.add_argument("--batch-size", type=int, default=64)
@@ -219,7 +230,7 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=0.001)
     parser.add_argument("--patience-early-stop", type=int, default=3)
     parser.add_argument("--patience-lr-reduce", type=int, default=2)
-    parser.add_argument("--fixed-metric-max-rul", type=float, default=125.0)
+    parser.add_argument("--fixed-metric-max-rul", type=float, default=65.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--project-name", type=str, default="n-cmapss-a2a")
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS)

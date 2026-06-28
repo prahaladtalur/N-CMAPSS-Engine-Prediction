@@ -3,7 +3,7 @@
 
 \subsection{Dataset and task}
 
-We evaluate remaining-useful-life regression on N-CMAPSS~\cite{ariaschao2021ncmapss}, using the train, validation, and test splits exposed by the \texttt{rul\_datasets} reader~\cite{ruldatasets2026}. Each engine unit is represented as a list of per-cycle multivariate sensor sequences, and each cycle has one scalar RUL target. The pipeline treats each cycle as one supervised example with input shape $(T,32)$, where $T$ is the retained temporal length and 32 is the number of sensor channels. FD1 is the primary controlled benchmark and FD2 is used as a cross-subset robustness check.
+We evaluate remaining-useful-life regression on N-CMAPSS~\cite{ariaschao2021ncmapss}, using the train, validation, and test splits exposed by the \texttt{rul\_datasets} reader~\cite{ruldatasets2026}. This is a simulation benchmark: N-CMAPSS combines a commercial-engine simulation model with real recorded flight profiles, and our experiments should not be read as validation on in-service engine failures. Each engine unit is represented as a list of per-cycle multivariate sensor sequences, and each cycle has one scalar RUL target. Unless otherwise noted, the reader caps RUL labels at 65 cycles and uses its default split, where the last 20\% of the original training units are used for validation. For FD1 this yields 5 development units, 1 validation unit, and 4 test units. The default input has shape $(T,32)$, where $T$ is the retained temporal length and the 32 channels are 4 operating-condition variables, 14 physical sensors, and 14 virtual sensors. We also report a physical-only ablation using the 4 operating-condition variables and 14 physical sensors. FD1 is the primary controlled benchmark and FD2 is used as a cross-subset robustness check.
 
 \subsection{Variable-length sequence preparation}
 
@@ -27,9 +27,9 @@ All controlled benchmark rows in the main comparison use asymmetric MSE with lat
 (\hat{y}_i-y_i)^2, & \hat{y}_i-y_i < 0.
 \end{cases}
 \end{equation}
-Here over-predicting RUL is treated as a late maintenance decision and is penalized more strongly than conservative under-prediction. This is a design choice motivated by the asymmetric PHM scoring function of Saxena et al.~\cite{saxena2008damage} and recent asymmetric-loss work~\cite{mpm2024loss}; Section~\ref{sec:ablations} makes clear that we do not yet have a controlled symmetric-MSE baseline.
+Here over-predicting RUL is treated as a late maintenance decision and is penalized more strongly than conservative under-prediction. This is a design choice motivated by the asymmetric PHM scoring function of Saxena et al.~\cite{saxena2008damage} and recent asymmetric-loss work~\cite{mpm2024loss}. Section~\ref{sec:ablations} compares asymmetric MSE with symmetric MSE and asymmetric Huber under the same WaveNet FD1 setting.
 
-Evaluation reports RMSE, $R^2$, PHM score, and threshold accuracies. Accuracy@20 is the percentage of predictions within $\pm20$ cycles of the true RUL. The PHM score follows the standard asymmetric exponential form, with late errors penalized more sharply than early errors.
+Evaluation reports RMSE, $R^2$, PHM score, and threshold accuracies. Accuracy@20 is the percentage of predictions within $\pm20$ cycles of the true RUL. The PHM score follows the standard asymmetric exponential form, with late errors penalized more sharply than early errors. We compare our own models only under matched preprocessing and training settings; externally published numbers are used as context for the N-CMAPSS result band, not as direct head-to-head baselines.
 
 \subsection{Model registry and benchmark harness}
 

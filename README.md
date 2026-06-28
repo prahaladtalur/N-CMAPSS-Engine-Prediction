@@ -11,6 +11,7 @@ The main goal is not to present a single overfit leaderboard number. It is to co
 - Draft PDF: [paper/main.pdf](paper/main.pdf)
 - LaTeX source: [paper/main.tex](paper/main.tex)
 - Canonical result map: [paper/state/canonical_results.md](paper/state/canonical_results.md)
+- Review-response controlled suite: [benchmark_results/review_response/fd1_review_20260627_191300/report.md](benchmark_results/review_response/fd1_review_20260627_191300/report.md)
 
 Build the paper with:
 
@@ -18,31 +19,33 @@ Build the paper with:
 make -C paper
 ```
 
-The paper intentionally separates supported findings from open ablations. In particular, sequence length and architecture are not fully disentangled, and asymmetric loss is framed as a motivated design choice rather than a proven empirical improvement.
+The paper intentionally separates supported findings from open ablations. In particular, sequence length is controlled only across 100-1000 timesteps, MSTCN component attribution is still open, and asymmetric loss is supported only by a limited WaveNet FD1 comparison.
 
 ## Controlled Results
 
-These are the primary apples-to-apples rows used for paper claims.
+These are the primary three-seed FD1 rows used for the final paper claims. They are simulation-benchmark results on N-CMAPSS FD1, not real-world deployment evidence or direct SOTA claims against papers using different protocols.
 
-| Split | Model | Protocol | RMSE | R2 | PHM | Accuracy@20 |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| FD1 | WaveNet | 30 epochs, T=1000, batch=32 | **6.523** | **0.9086** | **0.7256** | **98.83** |
-| FD1 | CNN-GRU | 30 epochs, T=1000, batch=32 | 7.006 | 0.8946 | 0.8396 | 98.53 |
-| FD1 | MSTCN | 30 epochs, T=1000, batch=32 | 7.604 | 0.8758 | 1.0033 | 98.53 |
-| FD2 | MSTCN | 30 epochs, T=1000, batch=32 | **6.495** | **0.8897** | **0.5755** | 99.01 |
-| FD2 | WaveNet | 30 epochs, T=1000, batch=32 | 6.739 | 0.8813 | 0.6756 | **99.50** |
-| FD2 | CNN-GRU | 30 epochs, T=1000, batch=32 | 19.812 | -0.0265 | 5.1463 | 59.41 |
+| Experiment | Model / Setting | Seeds | RMSE mean | RMSE std | R2 mean | Accuracy@20 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| FD1 top cluster | WaveNet, T=1000 | 3 | **6.868** | 0.299 | **0.8986** | 98.24 |
+| FD1 top cluster | MSTCN, T=1000 | 3 | 7.890 | 0.526 | 0.8659 | 97.75 |
+| FD1 top cluster | CNN-GRU, T=1000 | 3 | 17.168 | 8.801 | 0.2561 | 64.13 |
+| Window sweep | WaveNet, T=500 | 3 | **6.690** | 0.173 | **0.9038** | 98.24 |
+| Window sweep | WaveNet, T=250 | 3 | 6.880 | 0.531 | 0.8980 | **98.44** |
+| Loss comparison | WaveNet, asymmetric MSE | 3 | **6.868** | 0.299 | **0.8986** | **98.24** |
+| Loss comparison | WaveNet, MSE | 3 | 7.214 | 0.559 | 0.8878 | 97.65 |
 
 Reports:
 
-- [FD1 controlled benchmark](benchmark_results/apples_to_apples/fd1_ep30_len1000_20260425_090057/report.md)
-- [FD2 controlled benchmark](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md)
+- [Review-response FD1 controlled suite](benchmark_results/review_response/fd1_review_20260627_191300/report.md)
+- [Earlier FD1 controlled benchmark](benchmark_results/apples_to_apples/fd1_ep30_len1000_20260425_090057/report.md)
+- [Earlier FD2 controlled benchmark](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md)
 
 ## Main Findings
 
-- Short operational windows around 1000 timesteps are effective on N-CMAPSS, while full-flight recurrent baselines perform much worse. This is a directional finding because the current full-length and short-window rows also differ by architecture family.
-- MSTCN is in the top performance cluster, ranks third on controlled FD1, and is best by RMSE on FD2. The current evidence supports competitiveness, not universal dominance.
-- Asymmetric MSE is used because late RUL predictions are operationally more dangerous than early predictions. A symmetric-loss baseline and alpha sweep remain future work.
+- Short operational windows are effective on N-CMAPSS FD1. In a matched WaveNet sweep, T=500 is best by mean RMSE, with T=250 and T=1000 close behind.
+- WaveNet is the strongest stable FD1 model in the three-seed suite. MSTCN is stable and competitive, but not dominant. CNN-GRU is unstable under these settings.
+- Asymmetric MSE is modestly better than symmetric MSE in the WaveNet FD1 loss comparison, but broader alpha and architecture sweeps remain future work.
 
 ## Installation
 
@@ -87,8 +90,15 @@ uv run python scripts/benchmark_apples_to_apples.py \
   --batch-size 32 \
   --patience-early-stop 6 \
   --patience-lr-reduce 3 \
-  --fixed-metric-max-rul 125 \
+  --reader-max-rul 65 \
+  --fixed-metric-max-rul 65 \
   --models wavenet cnn_gru mstcn
+```
+
+Run the review-response suite:
+
+```bash
+WANDB_MODE=offline uv run python scripts/run_review_response_experiments.py
 ```
 
 ## Model Registry

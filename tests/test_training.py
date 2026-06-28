@@ -244,7 +244,14 @@ class TestAccuracyHelpers:
 
     def test_sota_gap_is_skipped_for_cross_dataset_comparison(self):
         assert not self.should_log_sota_gap({"dataset": "ncmapss", "sota_target_dataset": "cmapss"})
-        assert self.should_log_sota_gap({"dataset": "cmapss", "sota_target_dataset": "cmapss"})
+        assert not self.should_log_sota_gap({"dataset": "cmapss", "sota_target_dataset": "cmapss"})
+        assert self.should_log_sota_gap(
+            {
+                "dataset": "cmapss",
+                "sota_target_dataset": "cmapss",
+                "compare_to_published_sota": True,
+            }
+        )
 
     def test_sota_summary_gap_is_skipped_for_cross_dataset_comparison(self):
         summary = {}
@@ -269,7 +276,11 @@ class TestAccuracyHelpers:
         self.add_sota_summary_metrics(
             summary,
             metrics,
-            {"dataset": "cmapss", "sota_target_dataset": "cmapss"},
+            {
+                "dataset": "cmapss",
+                "sota_target_dataset": "cmapss",
+                "compare_to_published_sota": True,
+            },
         )
 
         assert summary["results/rmse_norm_gap_vs_sota"] == pytest.approx(2.0)

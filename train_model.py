@@ -634,8 +634,8 @@ def apply_prediction_calibrator(y_pred: np.ndarray, calibrator: Dict[str, Any]) 
 
 
 def should_log_sota_gap(config: Dict[str, Any]) -> bool:
-    """Only log paper SOTA gaps when dataset identity is explicitly comparable."""
-    return config.get("dataset", "ncmapss") == config.get("sota_target_dataset", "cmapss")
+    """Only log published-target gaps when explicitly requested."""
+    return bool(config.get("compare_to_published_sota", False))
 
 
 def add_sota_summary_metrics(
@@ -786,8 +786,13 @@ def train_model(
         "model_kwargs": {},
         "shuffle": True,
         "dataset": "ncmapss",
+        "reader_max_rul": 65,
+        "feature_set": "all",
+        "resolution_seconds": 1,
         "sota_target_dataset": "cmapss",
+        "compare_to_published_sota": False,
         "fixed_metric_max_rul": None,
+        "verbose": 1,
     }
 
     if config is None:
@@ -900,8 +905,10 @@ def train_model(
         weight_decay=config["weight_decay"],
     )
 
-    print("\nModel Architecture:")
-    model.summary()
+    verbose = int(config.get("verbose", 1))
+    if verbose:
+        print("\nModel Architecture:")
+        model.summary()
 
     # Log model info to wandb
     wandb.config.update(
@@ -969,7 +976,7 @@ def train_model(
             factor=config["lr_reduce_factor"],
             patience=config["patience_lr_reduce"],
             min_lr=config["min_lr"],
-            verbose=1,
+            verbose=verbose,
         )
     )
     if use_early_stop:
@@ -980,7 +987,7 @@ def train_model(
                 patience=config["patience_early_stop"],
                 min_delta=config["early_stop_min_delta"],
                 restore_best_weights=True,
-                verbose=1,
+                verbose=verbose,
             )
         )
 
@@ -996,7 +1003,7 @@ def train_model(
         sample_weight=sample_weights,
         callbacks=callbacks,
         shuffle=config["shuffle"],
-        verbose=1,
+        verbose=verbose,
     )
 
     prediction_calibrator = {"method": "none"}
@@ -1205,6 +1212,9 @@ def train_model(
         "data/train_samples": int(len(y_train)),
         "data/input_timesteps": int(input_shape[0]),
         "data/num_features": int(input_shape[1]),
+        "data/reader_max_rul": config["reader_max_rul"],
+        "data/feature_set": config["feature_set"],
+        "data/resolution_seconds": config["resolution_seconds"],
         # Training Config
         "training/epochs_trained": int(len(history.history["loss"])),
         "training/final_train_loss": float(history.history["loss"][-1]),
@@ -1644,6 +1654,25 @@ Examples:
         choices=[1, 2, 3, 4, 5, 6, 7],
         help="N-CMAPSS sub-dataset index (default: 1)",
     )
+    parser.add_argument(
+        "--reader-max-rul",
+        type=int,
+        default=65,
+        help="N-CMAPSS reader max_rul cap before model preprocessing (default: 65)",
+    )
+    parser.add_argument(
+        "--feature-set",
+        type=str,
+        default="all",
+        choices=["all", "physical"],
+        help="N-CMAPSS features: all=32 including virtual sensors; physical=18 without virtual sensors",
+    )
+    parser.add_argument(
+        "--resolution-seconds",
+        type=int,
+        default=1,
+        help="N-CMAPSS reader temporal downsampling interval in seconds (default: 1)",
+    )
 
     # Training configuration
     parser.add_argument("--units", type=int, default=64, help="Number of units (default: 64)")
@@ -1962,7 +1991,12 @@ Examples:
 
     # Load data
     print(f"\nLoading N-CMAPSS FD{args.fd} dataset...")
-    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(fd=args.fd)
+    (dev_X, dev_y), val_pair, (test_X, test_y) = get_datasets(
+        fd=args.fd,
+        max_rul=args.reader_max_rul,
+        feature_set=args.feature_set,
+        resolution_seconds=args.resolution_seconds,
+    )
     val_X, val_y = val_pair if val_pair else (None, None)
 
     merged_model_kwargs = {
@@ -2018,6 +2052,11 @@ Examples:
         ),
         "model_kwargs": merged_model_kwargs,
         "use_early_stop": json_training_config.get("use_early_stop", not args.no_early_stop),
+        "reader_max_rul": json_training_config.get("reader_max_rul", args.reader_max_rul),
+        "feature_set": json_training_config.get("feature_set", args.feature_set),
+        "resolution_seconds": json_training_config.get(
+            "resolution_seconds", args.resolution_seconds
+        ),
     }
 
     # Compare mode
