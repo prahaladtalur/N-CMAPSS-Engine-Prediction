@@ -2,16 +2,16 @@
 
 [![CI](https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction/actions/workflows/ci.yml/badge.svg)](https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction/actions/workflows/ci.yml)
 
-Deep-learning benchmarks for remaining useful life (RUL) prediction on NASA's N-CMAPSS turbofan dataset. The repository contains a reproducible training pipeline, a shared model registry, controlled benchmark outputs, and a paper draft describing the results.
+Deep-learning benchmarks for remaining useful life (RUL) prediction on NASA's N-CMAPSS turbofan simulation dataset. The repository contains a reproducible training pipeline, a shared model registry, controlled benchmark outputs, and a structured paper draft.
 
 The main goal is not to present a single overfit leaderboard number. It is to compare recurrent, convolutional, transformer, WaveNet, and multi-scale temporal-attention models under the same preprocessing, loss, training budget, and metrics.
 
 ## Paper
 
-- Draft PDF: [paper/main.pdf](paper/main.pdf)
+- Draft PDF: [output/pdf/n-cmapss-rul-paper-draft.pdf](output/pdf/n-cmapss-rul-paper-draft.pdf)
 - LaTeX source: [paper/main.tex](paper/main.tex)
 - Canonical result map: [paper/state/canonical_results.md](paper/state/canonical_results.md)
-- Review-response controlled suite: [benchmark_results/review_response/fd1_review_20260627_191300/report.md](benchmark_results/review_response/fd1_review_20260627_191300/report.md)
+- Three-seed controlled suite: [benchmark_results/review_response/fd1_review_20260627_191300/report.md](benchmark_results/review_response/fd1_review_20260627_191300/report.md)
 
 Build the paper with:
 
@@ -23,7 +23,7 @@ The paper intentionally separates supported findings from open ablations. In par
 
 ## Controlled Results
 
-These are the primary three-seed FD1 rows used for the final paper claims. They are simulation-benchmark results on N-CMAPSS FD1, not real-world deployment evidence or direct SOTA claims against papers using different protocols.
+These are the primary three-seed FD1 rows used in the current paper draft. They are simulation-benchmark results on N-CMAPSS FD1, not real-world deployment evidence or direct state-of-the-art claims against papers using different protocols.
 
 | Experiment | Model / Setting | Seeds | RMSE mean | RMSE std | R2 mean | Accuracy@20 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -37,8 +37,8 @@ These are the primary three-seed FD1 rows used for the final paper claims. They 
 
 Reports:
 
-- [Review-response FD1 controlled suite](benchmark_results/review_response/fd1_review_20260627_191300/report.md)
-- [SOTA-chase best-seed sweep](benchmark_results/sota_chase/fd1_review_20260628_120711/report.md)
+- [Three-seed FD1 controlled suite](benchmark_results/review_response/fd1_review_20260627_191300/report.md)
+- [Targeted best-seed sweep](benchmark_results/sota_chase/fd1_review_20260628_120711/report.md)
 - [Earlier FD1 controlled benchmark](benchmark_results/apples_to_apples/fd1_ep30_len1000_20260425_090057/report.md)
 - [Earlier FD2 controlled benchmark](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md)
 
@@ -83,7 +83,7 @@ uv run python train_model.py --list-models
 Train one model on FD1 with the standard short-window setup:
 
 ```bash
-uv run python train_model.py \
+WANDB_MODE=offline uv run python train_model.py \
   --model mstcn \
   --fd 1 \
   --epochs 30 \
@@ -94,7 +94,7 @@ uv run python train_model.py \
 Run the controlled FD1 benchmark used in the paper:
 
 ```bash
-uv run python scripts/benchmark_apples_to_apples.py \
+WANDB_MODE=offline uv run python scripts/benchmark_apples_to_apples.py \
   --fd 1 \
   --epochs 30 \
   --max-sequence-length 1000 \
@@ -106,7 +106,7 @@ uv run python scripts/benchmark_apples_to_apples.py \
   --models wavenet cnn_gru mstcn
 ```
 
-Run the review-response suite:
+Run the three-seed controlled suite:
 
 ```bash
 WANDB_MODE=offline uv run python scripts/run_review_response_experiments.py

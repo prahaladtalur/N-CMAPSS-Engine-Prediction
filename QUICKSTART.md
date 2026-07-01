@@ -39,7 +39,8 @@ WANDB_MODE=offline uv run python scripts/benchmark_apples_to_apples.py \
   --batch-size 32 \
   --patience-early-stop 6 \
   --patience-lr-reduce 3 \
-  --fixed-metric-max-rul 125 \
+  --reader-max-rul 65 \
+  --fixed-metric-max-rul 65 \
   --models wavenet cnn_gru mstcn
 ```
 

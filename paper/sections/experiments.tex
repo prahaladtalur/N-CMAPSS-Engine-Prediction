@@ -3,7 +3,7 @@
 
 \subsection{Experimental setup}
 
-The controlled benchmark uses N-CMAPSS FD1 as the primary subset and FD2 as a secondary cross-subset check. Unless otherwise noted, the apples-to-apples rows use the same data pipeline described in Section~\ref{sec:methods}: last-window truncation, train-fit feature standardization, reader max RUL 65, Adam optimization~\cite{kingma2015adam}, and the shared callback stack. The final review-response suite uses three seeds (42--44), with metrics saved in the repository's review-response results directory. External comparison rows are cited only as contextual literature anchors, not as direct matched baselines.
+The controlled benchmark uses N-CMAPSS FD1 as the primary subset and FD2 as a secondary cross-subset check. Unless otherwise noted, the apples-to-apples rows use the same data pipeline described in Section~\ref{sec:methods}: last-window truncation, train-fit feature standardization, reader max RUL 65, Adam optimization~\cite{kingma2015adam}, and the shared callback stack. The final controlled suite uses three seeds (42--44), with machine-readable metrics committed alongside the code. External comparison rows are cited only as contextual literature anchors, not as direct matched baselines.
 
 \subsection{Architecture sweep}
 
@@ -31,20 +31,13 @@ Transformer variants & STAR~\cite{fan2024star}, sparse-transformer-BiGRCU & Rece
 }
 \end{table}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{architecture_leaderboard_fd1}
-\caption{Historical FD1 architecture sweep from the repository comparison artifact. The figure is used as broad architecture-family context for recurrent~\cite{hochreiter1997lstm,cho2014gru}, convolutional~\cite{bai2018tcn,oord2016wavenet}, transformer~\cite{vaswani2017attention,fan2024star}, and multi-scale attention models~\cite{ttsnet2025,xu2024msattn}; the controlled head-to-head claims in the paper use the apples-to-apples rows in Tables~\ref{tab:fd1}--\ref{tab:fd2}.}
-\label{fig:architecture-leaderboard}
-\end{figure}
-
 \subsection{FD1 headline results}
 
 Table~\ref{tab:fd1} reports the three-seed FD1 head-to-head at $T{=}1000$. WaveNet is the strongest and most stable model in this comparison (RMSE $6.868\pm0.299$). MSTCN is stable and competitive (RMSE $7.890\pm0.526$), but it does not beat WaveNet on FD1. CNN-GRU has one strong seed and two collapsed seeds, so its mean is much worse than its best run.
 
 \begin{table}[t]
 \centering
-\caption{Review-response FD1 results at $T{=}1000$ over seeds 42--44.
+\caption{Controlled FD1 results at $T{=}1000$ over seeds 42--44.
   All rows use the same preprocessing, reader max RUL 65, asymmetric MSE,
   and 30-epoch budget with early stopping. Std is over seeds.}
 \label{tab:fd1}
@@ -112,31 +105,7 @@ T13 & CNN-GRU & 19.812 & -0.0265 & 5.1463 & 59.41 \\
 
 \subsection{Multiseed reproducibility}
 
-The review-response suite was run specifically to bound run-to-run variance. Table~\ref{tab:fd1} shows that the ranking changes when seed variance is included: WaveNet remains strong, MSTCN remains stable, and CNN-GRU is not reproducible under the same settings. This directly addresses the concern that the original single-seed table overstated architecture rankings.
-
-\begin{table}[t]
-\centering
-\caption{Legacy multiseed reproducibility figure source. The paper's final
-  architecture ranking uses Table~\ref{tab:fd1}; this table is retained only
-  to document the older seed-variance artifact used for Figure~\ref{fig:multiseed-rmse}.}
-\label{tab:multiseed}
-\small
-\begin{tabular}{llrrrr}
-\toprule
-Row & Model & Seeds & Mean RMSE & Std RMSE & Mean $R^2$ \\
-\midrule
-T5 & MSTCN  & 3 (42--44) & 8.140 & 0.74 & 0.8565 \\
-T6 & WaveNet & 2 (45--46) & 8.238 & 1.44 & 0.8498 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.72\linewidth]{multiseed_rmse_variability}
-\caption{Per-seed RMSE for the FD1 multiseed runs. Dots show individual seeds and black squares show the mean with one standard deviation over the available seeds.}
-\label{fig:multiseed-rmse}
-\end{figure}
+The three-seed suite was run specifically to bound run-to-run variance. Table~\ref{tab:fd1} shows that the ranking changes when seed variance is included: WaveNet remains strong, MSTCN remains stable, and CNN-GRU is not reproducible under the same settings. This demonstrates why architecture rankings should not rely on a single seed.
 
 \subsection{Sequence-length evidence}
 
@@ -161,20 +130,13 @@ Sequence length & RMSE mean & RMSE std & Mean $R^2$ & Acc@20 \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{sequence_length_evidence}
-\caption{FD1 sequence-length evidence from the repository artifact. The final paper claim uses the matched WaveNet sweep in Table~\ref{tab:length}; older mixed-protocol rows are treated as historical context only.}
-\label{fig:length-evidence}
-\end{figure}
-
 \subsection{External comparison}
 
-The closest N-CMAPSS literature anchors are Solís-Martín et al.~\cite{solismartin2021stacked}, who report validation RMSE 6.24 using a 161-cycle window, and Cohen et al.~\cite{ncmapss_eventual2023}, who report RMSE 7.75 for ANN-Flux. Our three-seed FD1 WaveNet mean at $T{=}1000$ (RMSE $6.868\pm0.299$), the best matched window-sweep mean at $T{=}500$ (RMSE $6.690\pm0.173$), and the MSTCN FD1 mean (RMSE $7.890\pm0.526$) are in the same broad N-CMAPSS numerical band. In addition, Table~\ref{tab:sota-chase} reports the best single SOTA-chase run found in a targeted seed sweep. This run is the headline leaderboard-style result: WaveNet at $T{=}1000$ with seed 47 reaches RMSE 6.197 on FD1, slightly below the 6.24 N-CMAPSS anchor of Solís-Martín et al. Because the external rows use their own splits, inputs, and validation/test conventions, this is best read as a SOTA-style repository result rather than a fully matched head-to-head claim. C-MAPSS-only results from STAR~\cite{fan2024star}, TTSNet~\cite{ttsnet2025}, and Xu et al.~\cite{xu2024msattn} are treated as architectural precedent rather than direct numerical baselines because the datasets and sequence regimes differ substantially.
+The closest N-CMAPSS literature anchors are Solís-Martín et al.~\cite{solismartin2021stacked}, who report validation RMSE 6.24 using a 161-cycle window, and Cohen et al.~\cite{ncmapss_eventual2023}, who report RMSE 7.75 for ANN-Flux. Our three-seed FD1 WaveNet mean at $T{=}1000$ (RMSE $6.868\pm0.299$), the best matched window-sweep mean at $T{=}500$ (RMSE $6.690\pm0.173$), and the MSTCN FD1 mean (RMSE $7.890\pm0.526$) are in the same broad N-CMAPSS numerical band. In addition, Table~\ref{tab:sota-chase} reports the best single run found in a targeted seed sweep. WaveNet at $T{=}1000$ with seed 47 reaches RMSE 6.197 on FD1, slightly lower than the 6.24 N-CMAPSS anchor of Solís-Martín et al. Because the external rows use their own splits, inputs, and validation/test conventions, this is a repository benchmark result rather than a fully matched head-to-head claim. C-MAPSS-only results from STAR~\cite{fan2024star}, TTSNet~\cite{ttsnet2025}, and Xu et al.~\cite{xu2024msattn} are treated as architectural precedent rather than direct numerical baselines because the datasets and sequence regimes differ substantially.
 
 \begin{table}[t]
 \centering
-\caption{SOTA-chase FD1 best single run. This leaderboard-style row is reported separately from the three-seed controlled tables because it is selected from a targeted seed sweep.}
+\caption{Best single FD1 run from the targeted seed sweep. This row is reported separately from the three-seed controlled tables because it is selected rather than averaged over seeds.}
 \label{tab:sota-chase}
 \small
 \begin{tabular}{llrrrr}
@@ -185,12 +147,5 @@ WaveNet & $T{=}1000$, asymmetric MSE, 32 features & 47 & 6.197 & 0.9175 & 99.71 
 \bottomrule
 \end{tabular}
 \end{table}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.82\linewidth]{external_ncmapss_comparison}
-\caption{Contextual comparison with the closest N-CMAPSS literature anchors~\cite{solismartin2021stacked,ncmapss_eventual2023}. External rows use their published protocols and are not direct head-to-head baselines; they are included only to show the numerical band of recent N-CMAPSS results.}
-\label{fig:external-comparison}
-\end{figure}
 
 We dissect these results across sequence length, architecture family, and loss form in Section~\ref{sec:ablations}.

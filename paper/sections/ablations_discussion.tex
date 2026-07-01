@@ -19,7 +19,7 @@ The interpretation supported by the current results is that WaveNet is the robus
 
 The project uses asymmetric MSE as its default loss, and the three-seed WaveNet comparison now gives preliminary empirical support for that choice. At $T{=}1000$, asymmetric MSE obtains mean RMSE 6.868 and mean Accuracy@20 98.24, symmetric MSE obtains mean RMSE 7.214 and mean Accuracy@20 97.65, and asymmetric Huber obtains mean RMSE 8.904 with high variance because one seed collapses. The loss is also aligned with the asymmetric PHM scoring tradition~\cite{saxena2008damage} and with recent cost-sensitive RUL loss design~\cite{mpm2024loss}.
 
-However, C3 is still preliminary. The comparison covers one architecture, one subset, one window length, and only three seeds. There is no $\alpha$ sweep over the late-penalty ratio and no architecture-wide loss comparison. We therefore frame asymmetric MSE as the best loss in this limited review-response suite, not as a general theorem about RUL loss design.
+However, C3 is still preliminary. The comparison covers one architecture, one subset, one window length, and only three seeds. There is no $\alpha$ sweep over the late-penalty ratio and no architecture-wide loss comparison. We therefore frame asymmetric MSE as the best loss in this limited controlled suite, not as a general theorem about RUL loss design.
 
 \subsection{Open experiments}
 
