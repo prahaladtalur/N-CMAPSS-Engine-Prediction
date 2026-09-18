@@ -1,0 +1,52 @@
+\section{Discussion}
+\label{sec:discussion}
+
+The main result is not that a classifier can recognize a simulated failure
+trajectory after seeing its age. Cycle count alone already reaches AUROC 0.923.
+The useful result is the comparison against that strong baseline. At a matched
+pre-window alert budget, measured telemetry raises final-window recall from
+0.554 for cycle plus operating conditions to 0.793 for all observable inputs.
+The paired complete-engine bootstrap interval for the recall gain remains
+positive, from 0.183 to 0.296.
+
+The secondary nested model-selection policy raises all-observable recall from
+0.793 to 0.821 and AUROC from 0.966 to 0.973. It selects histogram gradient
+boosting in three outer folds and an RBF support-vector classifier in two. This
+is a practical improvement under the same warning budget, but it is not an
+architecture claim. The candidate set is small, the model choice is evaluated
+only on this simulated subset, and the policy does not improve the earlier
+first-warning timing reported for the sensor-only rule.
+
+The telemetry-only rule supplies a separate result for an early-screening
+setting. It has no elapsed-cycle feature, yet it recalls 77.1\% of final-window
+cycles at a 4.7\% pre-window false-alert rate. It warns 69 of 90 engines by
+the window start, with a median lead of 6 cycles among warned engines. This
+does not show that the model knows when a real engine should be removed from
+service. It shows that the documented measured channels contain signal about
+the simulated approach to the chosen 20-cycle boundary.
+
+The feature definition matters. The evaluated model uses only the 14 named
+measured physical channels, listed in Table~\ref{tab:feature-provenance}.
+It does not use virtual sensors, target health parameters, unit ID, RUL, or the
+auxiliary \texttt{Fc} and \texttt{hs} fields. This restriction makes the
+telemetry result testable. It also makes the result lower than an experiment
+that treated auxiliary health-state information as if it were a measured
+sensor.
+
+Several limitations remain. First, tiny-N-CMAPSS is simulated and the retained
+data are $100\times$ downsampled. Each per-cycle summary averages about 93
+retained readings, so it cannot test how a warning would respond to high-rate
+within-flight transients. Second, the 20-cycle window, 5\% false-alert budget,
+and one-cycle alert definition are experimental choices. A maintenance program
+would need costs, inspection capacity, confirmation rules, and a lead-time
+objective before choosing a policy. Third, five seeds test stochastic variation
+of the fixed reference and the nested selection procedure on the same data.
+They do not replace an independently labeled fleet or a held-out test campaign.
+
+The next technical step is to train and evaluate a warning policy against an
+engine-level objective, such as warning by a specified lead time with a
+per-engine alert budget. That would directly optimize the tradeoff exposed in
+Table~\ref{tab:warning-timing}. The next empirical step is external validation
+on labeled engines with maintenance outcomes. Until then, this paper should be
+read as a controlled simulation result about information value, not a deployable
+maintenance recommendation.

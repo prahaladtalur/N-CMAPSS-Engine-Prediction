@@ -1,0 +1,138 @@
+\section{Data and warning protocol}
+\label{sec:methods}
+
+\subsection{Simulated engine data and target}
+
+The experiment uses the labeled training partition of the public
+\texttt{tiny-N-CMAPSS} repository at commit
+\texttt{b915997ff8d5}~\cite{tiny_ncmapss}; the reproducibility manifest records
+the complete commit hash.
+The source URL is \url{https://github.com/alovberg/tiny-N-CMAPSS}.
+This repository documents a $100\times$-downsampled N-CMAPSS challenge subset.
+The checked source files contain 90 simulated run-to-failure trajectories and
+633,875 retained readings. We aggregate them to 6,825 engine-cycle rows, or
+92.9 retained readings per cycle on average. The separate test partition has
+no RUL labels and is not used here.
+
+The target marks an engine cycle as inside a stated final maintenance window:
+\begin{equation}
+y=\begin{cases}
+1, & \mathrm{RUL}\leq20,\\
+0, & \mathrm{RUL}>20.
+\end{cases}
+\label{eq:maintenance-window}
+\end{equation}
+There are 1,890 positive cycle rows, a 27.7\% base rate. The value 20 is an
+experimental warning boundary, not a recommended service interval. For each
+trajectory, cycle plus RUL is constant; total simulated lifetime ranges from
+48 to 100 cycles (mean 75.8, standard deviation 14.1). This variation makes
+elapsed cycle a useful but incomplete baseline.
+
+\subsection{Feature provenance and input sets}
+
+N-CMAPSS distinguishes measured physical properties from auxiliary fields.
+The primary measurement source used here is the 14-channel \texttt{Xs} group.
+The two fields \texttt{Fc} (flight class) and \texttt{hs} (health state) are
+auxiliary data and are excluded from every model. In particular, \texttt{hs}
+is not treated as a sensor measurement. The experiment also excludes unit ID
+and RUL from every model. Table~\ref{tab:feature-provenance} lists the exact
+variables.
+
+\begin{table}[H]
+\centering
+\caption{Input provenance. Means and population standard deviations are
+computed within each engine cycle for every channel except elapsed cycle.}
+\label{tab:feature-provenance}
+\small
+\begin{tabular}{p{0.24\textwidth}c p{0.60\textwidth}}
+\toprule
+Group & Count & Fields and use \\
+\midrule
+Measured physical (\texttt{Xs}) & 14 & \texttt{T24, T30, T48, T50, P15, P2, P21, P24, Ps30, P40, P50, Nf, Nc, Wf}; included in telemetry variants \\
+Operating conditions (\texttt{W}) & 4 & \texttt{alt, Mach, TRA, T2}; used in cycle-plus-operating and all-observable inputs \\
+Elapsed cycle & 1 & \texttt{cycle}; included only in variants that name it \\
+Auxiliary fields & 2 & \texttt{Fc, hs}; excluded from every model \\
+Identifier and label & 2 & \texttt{unit, RUL}; excluded from every model \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We compare four inputs with one fixed random-forest reference. The cycle-only
+baseline has one feature. Cycle plus operating conditions has the cycle number
+and eight within-cycle operating summaries. Measured telemetry only has 28
+within-cycle summaries from the 14 measured channels. All observable inputs has
+37 features: cycle, operating summaries, and measured-telemetry summaries. This
+comparison separates three questions: how much a clock predicts, whether
+operating state adds information, and whether measured telemetry reduces misses
+beyond both.
+
+Each variant uses a \texttt{RandomForestClassifier} with 250 trees, maximum
+depth 12, minimum leaf size 3, balanced classes, and a primary random seed of
+2026. The model is a fixed screening model. The study does not claim that it is
+the best architecture for this data.
+
+\subsection{Nested engine-held-out validation}
+
+We use five outer \texttt{GroupKFold} splits grouped by engine. Each outer
+test fold has 18 complete trajectories and the remaining 72 engines form the
+outer training data. Every engine appears in exactly one outer test fold. Its
+rows are absent from fitting and threshold selection for that fold.
+
+Within each outer training set, four inner engine-grouped folds generate
+out-of-fold probabilities. We choose the lowest probability threshold whose
+pre-window false-alert rate is at or below 5\%. A final model then fits the 72
+outer-training engines and predicts the 18 held-out engines. The pooled result
+contains only these outer-test predictions. This procedure evaluates a warning
+policy without choosing its threshold from test-engine labels.
+
+\subsection{Nested model-family selection}
+
+The fixed random forest is used for the information comparison so that the
+input-set result does not depend on a particular architecture. We also evaluate
+one secondary, all-observable warning policy that selects a model family within
+each outer-training split. Its four candidates are the fixed random-forest
+reference, an extra-trees classifier, a histogram-gradient-boosting classifier,
+and a standardized RBF support-vector classifier. Their configurations are
+recorded in the evaluation output.
+
+For each outer fold, every candidate produces inner engine-grouped out-of-fold
+probabilities. For each candidate, the inner probabilities determine the same
+5\%-budget threshold as above. The selected candidate is the one with the
+highest inner final-window recall at that threshold; ties break in order of
+AUROC, average precision, precision, and lower false-alert rate. We then fit
+only that selected candidate on all 72 outer-training engines and score the 18
+held-out engines. Thus neither model-family selection nor threshold selection
+uses labels from the outer test engines.
+
+\subsection{Metrics, robustness, and warning timing}
+
+We report AUROC, precision, final-window recall, and the pre-window false-alert
+rate. We calculate 95\% percentile intervals by resampling complete engine
+trajectories 2,000 times. We also report a fixed 0.5-threshold check on the
+same outer-test probabilities. It is a diagnostic, not the policy used for the
+primary result.
+
+To test stochastic variation, we repeat the full fixed-random-forest input
+comparison and the full selected-policy procedure with seeds 2024 through 2028.
+The outer engine splits remain fixed, so these ranges test run-to-run variation
+on the same data rather than a new-dataset replication.
+
+For a first-warning analysis, let $c_u^{\mathrm{window}}$ be the first cycle
+of engine $u$ with $\mathrm{RUL}\leq20$, and let $c_u^{\mathrm{warn}}$ be the
+first cycle whose score meets its outer-fold threshold. The lead is
+\begin{equation}
+\ell_u=c_u^{\mathrm{window}}-c_u^{\mathrm{warn}}.
+\label{eq:lead}
+\end{equation}
+Positive values are warnings before the window; negative values are warnings
+after it begins. This timing is a property of the tested screening policy, not
+a maintenance command.
+
+\subsection{Reproducibility materials}
+
+The project repository is
+\url{https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction}. The
+evaluation records the exact tiny-N-CMAPSS commit, SHA256 hashes of the two
+downloaded data files, outer-test predictions, selected thresholds, and the
+scripts used to produce the tables and figures. These materials identify the
+corrected input definition and make the reported values reproducible.

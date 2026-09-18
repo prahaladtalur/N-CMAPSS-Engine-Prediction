@@ -1,0 +1,201 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{Measured telemetry adds value beyond cycle and operating state}
+
+Table~\ref{tab:input-comparison} gives the nested outer-test results. Elapsed
+cycle alone is a strong baseline, with AUROC 0.923 and final-window recall
+0.563 at a 0.050 pre-window false-alert rate. Adding operating conditions
+raises AUROC to 0.935 but leaves recall at 0.554. The all-observable model,
+which adds summaries from the 14 measured channels, reaches AUROC 0.966 and
+recall 0.793 at a 0.051 false-alert rate.
+
+The paired outer-test comparison of all observable inputs against cycle plus
+operating conditions estimates a 0.031 AUROC gain, with a 95\% engine-cluster
+interval from 0.023 to 0.039. Its recall gain is 0.239, with an interval from
+0.183 to 0.296. The false-alert-rate difference is 0.004, with an interval
+that spans zero (-0.006 to 0.015). At the matched alert budget, the added
+telemetry therefore increases the share of final-window cycles found without a
+clear increase in the pre-window alert rate.
+
+The telemetry-only rule is also useful without a cycle-number feature. It has
+AUROC 0.939, precision 0.863, and recall 0.771 at a 0.047 false-alert rate.
+Compared with cycle only, it gains 0.208 recall (95\% interval 0.105 to 0.310).
+Its AUROC difference is 0.016, with an interval from -0.009 to 0.038. The
+recall result is the stronger evidence for the fixed 5\% warning policy.
+
+\begin{table}[H]
+\centering
+\caption{Nested engine-held-out performance at a target 5\% pre-window
+false-alert budget. Values in brackets are 95\% percentile intervals from
+2,000 complete-engine bootstrap resamples.}
+\label{tab:input-comparison}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\toprule
+Input & AUROC & Precision & Final-window recall & Pre-window false-alert rate \\
+\midrule
+Elapsed cycle only & 0.923 [0.910, 0.939] & 0.813 [0.766, 0.866] & 0.563 [0.480, 0.646] & 0.050 [0.032, 0.067] \\
+Cycle plus operating conditions & 0.935 [0.922, 0.947] & 0.821 [0.775, 0.869] & 0.554 [0.480, 0.629] & 0.046 [0.031, 0.063] \\
+Measured telemetry only & 0.939 [0.918, 0.957] & 0.863 [0.837, 0.888] & 0.771 [0.715, 0.824] & 0.047 [0.037, 0.058] \\
+All observable inputs & 0.966 [0.958, 0.973] & 0.857 [0.821, 0.892] & 0.793 [0.751, 0.835] & 0.051 [0.037, 0.066] \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{maintenance_telemetry_benchmark}
+\caption{Measured telemetry improves final-window classification beyond
+elapsed cycle and operating conditions. Each bar uses only outer-test engine
+predictions; error bars are 95\% complete-engine bootstrap intervals.}
+\label{fig:input-comparison}
+\end{figure}
+
+\subsection{Nested selection improves the all-observable warning policy}
+
+The information comparison above keeps the classifier fixed. To test whether a
+stronger warning policy is available without using test-engine labels, the
+secondary all-observable analysis selects from four tabular candidates inside
+each outer-training split. Histogram gradient boosting is selected in three
+outer folds and the RBF support-vector classifier in two. The resulting policy
+reaches AUROC 0.973, precision 0.861, and final-window recall 0.821 at a 0.051
+realized false-alert rate (Table~\ref{tab:model-selection}). It warns 54 of 90
+engines at or before the final-window start, so its gain is in cycle-level
+detection rather than first-warning lead time.
+
+Relative to the fixed all-observable random forest, nested model selection adds
+0.007 AUROC and 0.028 final-window recall at the same pooled false-alert rate.
+The paired complete-engine bootstrap interval is 0.002 to 0.011 for AUROC and
+0.004 to 0.051 for recall. The model-family choice and threshold are made from
+inner out-of-fold predictions in every outer fold, so these intervals compare
+outer-test predictions only.
+
+\begin{table}[H]
+\centering
+\caption{All-observable warning policies at a target 5\% pre-window
+false-alert budget. The selected policy chooses its model family and threshold
+within each outer-training split. Values in brackets are 95\% complete-engine
+bootstrap intervals.}
+\label{tab:model-selection}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\toprule
+Policy & AUROC & Precision & Final-window recall & Pre-window false-alert rate \\
+\midrule
+Fixed random forest & 0.966 [0.958, 0.973] & 0.857 [0.821, 0.892] & 0.793 [0.751, 0.835] & 0.051 [0.037, 0.066] \\
+Nested selected policy & 0.973 [0.966, 0.979] & 0.861 [0.827, 0.894] & 0.821 [0.778, 0.862] & 0.051 [0.038, 0.066] \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{maintenance_nested_model_selection}
+\caption{Nested model selection improves the all-observable policy without
+using labels from test engines. The selected policy uses histogram gradient
+boosting in three outer folds and an RBF support-vector classifier in two.}
+\label{fig:model-selection}
+\end{figure}
+
+\subsection{The fixed 0.5 threshold is a useful diagnostic, not an equivalent policy}
+
+Table~\ref{tab:fixed-threshold} evaluates the same outer-test scores at a
+fixed 0.5 threshold. The telemetry-only rule changes little because its nested
+thresholds range from 0.460 to 0.479. The all-observable, cycle-only, and
+cycle-plus-operating policies require higher thresholds to meet the 5\% alert
+budget. Their 0.5-threshold recalls are higher, but so are their false-alert
+rates. This confirms that threshold selection materially affects the decision
+policy and was not omitted from the primary result.
+
+\begin{table}[H]
+\centering
+\caption{Diagnostic fixed-threshold performance on the same outer-test
+probabilities. These values do not replace nested threshold selection.}
+\label{tab:fixed-threshold}
+\small
+\begin{tabular}{lrrr}
+\toprule
+Input & Precision & Final-window recall & Pre-window false-alert rate \\
+\midrule
+Elapsed cycle only & 0.624 & 0.887 & 0.204 \\
+Cycle plus operating conditions & 0.700 & 0.859 & 0.141 \\
+Measured telemetry only & 0.890 & 0.751 & 0.036 \\
+All observable inputs & 0.791 & 0.872 & 0.089 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Sensor-only scoring produces earlier first warnings}
+
+The first-warning analysis evaluates a different operational property from
+cycle-level recall: whether a policy flags an engine at or before the start of
+the final 20-cycle window. The telemetry-only rule warns 69 of 90 engines by
+that point, with a median lead of 6 cycles among the 87 engines it eventually
+warns (Table~\ref{tab:warning-timing}). The fixed all-observable random forest
+warns 50 engines by the window start, while the nested selected policy warns
+54. Both have a median lead of 1 cycle among the engines they eventually warn.
+
+This difference is a tradeoff, not a contradiction. The all-observable model
+was selected for cycle-level final-window classification, while the first-alert
+metric rewards an earlier threshold crossing. A deployment study that needs
+lead time should select and validate an engine-level early-warning objective
+directly.
+
+\begin{table}[H]
+\centering
+\caption{First-warning timing from outer-test predictions. Positive lead means
+the first warning occurs before the final-window start.}
+\label{tab:warning-timing}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Input & By window start & Late warning & No warning & Median lead among warned \\
+\midrule
+Measured telemetry only & 69/90 (76.7\%) & 18/90 & 3/90 & 6 cycles \\
+All observable, fixed random forest & 50/90 (55.6\%) & 39/90 & 1/90 & 1 cycle \\
+All observable, nested selected policy & 54/90 (60.0\%) & 34/90 & 2/90 & 1 cycle \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{maintenance_sensor_warning_timing}
+\caption{First warning for the telemetry-only policy across 90 outer-test
+engine trajectories. This policy uses no cycle number or operating-condition
+field. Positive lead values arrive before the final 20-cycle window begins.}
+\label{fig:warning-timing}
+\end{figure}
+
+\subsection{The conclusion is stable across model seeds}
+
+Table~\ref{tab:seed-robustness} reports five complete nested evaluations with
+random-forest seeds 2024 through 2028. The seed ranges are narrow for each
+input. They do not replace external validation, because the simulated engines
+and the outer folds remain the same.
+
+\begin{table}[H]
+\centering
+\caption{Five-seed robustness check. Each entry is mean [minimum, maximum]
+over full nested evaluations using fixed outer engine splits. The first four
+rows use the fixed random-forest reference; the final row repeats model-family
+selection inside every outer-training split.}
+\label{tab:seed-robustness}
+\small
+\begin{tabular}{lrrr}
+\toprule
+Input & AUROC & Final-window recall & Pre-window false-alert rate \\
+\midrule
+Elapsed cycle only & 0.923 [0.923, 0.923] & 0.564 [0.559, 0.568] & 0.050 [0.048, 0.051] \\
+Cycle plus operating conditions & 0.935 [0.934, 0.935] & 0.559 [0.554, 0.566] & 0.049 [0.046, 0.049] \\
+Measured telemetry only & 0.940 [0.939, 0.941] & 0.774 [0.771, 0.776] & 0.048 [0.046, 0.050] \\
+All observable inputs & 0.965 [0.965, 0.966] & 0.785 [0.780, 0.793] & 0.050 [0.049, 0.051] \\
+Nested selected policy & 0.973 [0.973, 0.973] & 0.821 [0.821, 0.822] & 0.051 [0.051, 0.051] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier

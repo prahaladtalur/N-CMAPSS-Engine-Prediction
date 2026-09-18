@@ -1,0 +1,24 @@
+\section{Conclusion}
+
+This study tests a narrow maintenance-warning question on simulated turbofan
+engines: do measured channels add information beyond elapsed cycle and operating
+conditions when the warning threshold is chosen without seeing the held-out
+engines? The answer is yes for the tested N-CMAPSS subset. At a roughly 5\%
+pre-window false-alert rate, all observable inputs raise final-window recall
+from 55.4\% to 79.3\% over the cycle-plus-operating baseline. The paired
+engine-cluster interval for the gain is 18.3 to 29.6 percentage points.
+
+The telemetry-only result is also useful. With no cycle number or
+operating-condition field, it recalls 77.1\% of final-window cycles and warns
+69 of 90 engines by the window start. These findings are stable across five
+random-forest seeds and use only the 14 documented measured channels. A
+secondary policy that selects its model family inside the training folds raises
+the all-observable result to AUROC 0.973 and recall 82.1\%, compared with 0.966
+and 79.3\% for the fixed random forest at the same pooled false-alert rate.
+This is a controlled performance gain, not a claim of a universally best model.
+
+The contribution is evidence that observed sensor telemetry carries
+maintenance-warning value beyond a flight-cycle clock in this simulator. It is
+not evidence for a service interval or a fielded-aircraft decision rule. Those
+claims require maintenance-defined costs and lead times, plus independent
+labeled engine data.

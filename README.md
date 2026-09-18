@@ -1,12 +1,26 @@
-# N-CMAPSS Engine RUL Prediction
+# N-CMAPSS Engine Maintenance-Warning Study
 
 [![CI](https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction/actions/workflows/ci.yml/badge.svg)](https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction/actions/workflows/ci.yml)
 
-Deep-learning benchmarks for remaining useful life (RUL) prediction on NASA's N-CMAPSS turbofan simulation dataset. The repository contains a reproducible training pipeline, a shared model registry, controlled benchmark outputs, and a structured paper draft.
+This repository supports the paper **“Beyond Cycle Count: Sensor-Based Maintenance Warnings for Simulated Turbofan Engines.”** The current study asks whether measured telemetry improves final-window warning performance beyond elapsed cycle and recorded operating conditions on the public, 100-times-downsampled tiny-N-CMAPSS simulation subset.
 
-The main goal is not to present a single overfit leaderboard number. It is to compare recurrent, convolutional, transformer, WaveNet, and multi-scale temporal-attention models under the same preprocessing, loss, training budget, and metrics.
+Under nested engine-held-out evaluation with thresholds selected inside the training folds, adding 14 measured physical channels raises final-window recall from **55.4% to 79.3%** at an approximately 5% pre-window false-alert rate. The paired complete-engine bootstrap interval for the 23.9-percentage-point gain is 18.3 to 29.6 points. These are simulation results, not a service interval or fielded-aircraft decision rule.
 
-## Paper
+## Current paper and reproducibility materials
+
+- Revised manuscript: [paper/ijscar_submission/main_ijscar.pdf](paper/ijscar_submission/main_ijscar.pdf)
+- LaTeX entry point: [paper/ijscar_submission/main_ijscar.tex](paper/ijscar_submission/main_ijscar.tex)
+- Corrected observable-input results: [benchmark_results/maintenance_warning/corrected_observable_nested_20260812/results.json](benchmark_results/maintenance_warning/corrected_observable_nested_20260812/results.json)
+- Nested model-selection results: [benchmark_results/maintenance_warning/model_selected_observable_20260814_robust/results.json](benchmark_results/maintenance_warning/model_selected_observable_20260814_robust/results.json)
+- Primary evaluation runner: [scripts/run_observable_maintenance_warning_evaluation.py](scripts/run_observable_maintenance_warning_evaluation.py)
+- Nested model-selection runner: [scripts/run_nested_model_selection_warning_evaluation.py](scripts/run_nested_model_selection_warning_evaluation.py)
+- Dataset source: [tiny-N-CMAPSS](https://github.com/alovberg/tiny-N-CMAPSS) at pinned commit [`b915997ff8d571f4e9d091954d6556835f212ded`](https://github.com/alovberg/tiny-N-CMAPSS/tree/b915997ff8d571f4e9d091954d6556835f212ded)
+
+The committed result bundles contain source-file SHA256 hashes, input definitions, outer-test predictions, selected thresholds, fold metrics, first-warning records, model configurations, bootstrap intervals, and seed-robustness summaries. The models exclude `Fc`, `hs`, unit ID, and RUL from their inputs.
+
+## Earlier architecture-comparison materials
+
+The repository also retains the earlier RUL-regression benchmarks for historical and engineering context. They are not the evidence base for the current maintenance-warning paper.
 
 - Draft PDF: [output/pdf/n-cmapss-rul-paper-draft.pdf](output/pdf/n-cmapss-rul-paper-draft.pdf)
 - LaTeX source: [paper/main.tex](paper/main.tex)
@@ -21,9 +35,9 @@ make -C paper
 
 The paper intentionally separates supported findings from open ablations. In particular, sequence length is controlled only across 100-1000 timesteps, MSTCN component attribution is still open, and asymmetric loss is supported only by a limited WaveNet FD1 comparison.
 
-## Controlled Results
+## Legacy controlled RUL-regression results
 
-These are the primary three-seed FD1 rows used in the current paper draft. They are simulation-benchmark results on N-CMAPSS FD1, not real-world deployment evidence or direct state-of-the-art claims against papers using different protocols.
+These are the primary three-seed FD1 rows from the earlier architecture-comparison draft. They are simulation-benchmark results on N-CMAPSS FD1, not evidence for the current maintenance-warning claim, real-world deployment, or direct state-of-the-art comparisons against papers using different protocols.
 
 | Experiment | Model / Setting | Seeds | RMSE mean | RMSE std | R2 mean | Accuracy@20 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -42,7 +56,7 @@ Reports:
 - [Earlier FD1 controlled benchmark](benchmark_results/apples_to_apples/fd1_ep30_len1000_20260425_090057/report.md)
 - [Earlier FD2 controlled benchmark](benchmark_results/apples_to_apples/fd2_ep30_len1000_20260425_112601/report.md)
 
-## Best Single Run
+## Legacy best single run
 
 For leaderboard-style comparison only, the best individual FD1 run found so far is:
 
@@ -52,7 +66,7 @@ For leaderboard-style comparison only, the best individual FD1 run found so far 
 
 This is intentionally reported separately from the controlled three-seed table because it is a best-seed result, not a robust mean/std claim.
 
-## Main Findings
+## Legacy benchmark findings
 
 - Short operational windows are effective on N-CMAPSS FD1. In a matched WaveNet sweep, T=500 is best by mean RMSE, with T=250 and T=1000 close behind.
 - WaveNet is the strongest stable FD1 model in the three-seed suite. MSTCN is stable and competitive, but not dominant. CNN-GRU is unstable under these settings.
@@ -70,7 +84,7 @@ pip install uv
 uv sync --all-extras
 ```
 
-The N-CMAPSS data is downloaded through `rul-datasets` when training scripts run. Raw data, trained models, local W&B runs, and generated result directories are intentionally ignored by Git.
+The N-CMAPSS data is downloaded through `rul-datasets` when training scripts run. Raw data, trained models, and local W&B runs are intentionally ignored by Git. Compact result bundles used by the current paper are committed for auditability.
 
 ## Quick Start
 

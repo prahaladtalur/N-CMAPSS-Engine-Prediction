@@ -1,0 +1,57 @@
+\begin{abstract}
+Run-to-failure engine data can make a maintenance warning look successful for
+the wrong reason: elapsed cycle count is already informative about how close an
+engine is to its recorded failure. This study tests whether measured telemetry
+adds useful final-window warning information beyond elapsed cycle and current
+operating conditions. We label a simulated turbofan engine cycle positive when
+$\mathrm{RUL}\leq20$ and use 90 complete trajectories from the public,
+$100\times$-downsampled tiny-N-CMAPSS training partition. The corrected input
+definition uses the 14 measured physical channels documented by N-CMAPSS. It
+excludes the auxiliary flight-class and health-state fields, unit ID, and RUL.
+
+Five outer engine-held-out folds and four inner engine-grouped folds select a
+threshold for a 5\% pre-window false-alert budget. The cycle-plus-operating
+baseline recalls 55.4\% of final-window cycles. Adding the 14 measured channels
+raises recall to 79.3\% at the matched alert budget. The paired engine-cluster
+bootstrap estimates a 23.9-percentage-point recall gain, with a 95\% interval
+from 18.3 to 29.6 percentage points.
+
+The result shows that the measured telemetry in this simulator reduces missed
+final-window cycles beyond a clock-and-operating-state baseline. It does not
+set a service interval, validate a fielded aircraft system, or certify safety.
+\end{abstract}
+
+\section{Introduction}
+
+Maintenance teams do not act on a remaining useful life (RUL) estimate alone.
+They need a warning policy that identifies a near-term maintenance window while
+keeping alerts during earlier operation under control. That makes the relevant
+question a classification and threshold-selection problem: does the available
+information identify cycles near the decision boundary on engines the model has
+not seen?
+
+N-CMAPSS provides simulated aircraft-engine degradation trajectories under
+recorded flight conditions~\cite{ariaschao2021ncmapss}. Published work on this
+dataset has largely reported RUL regression scores with different readers,
+windows, models, and loss functions~\cite{ariaschao2022fusing,lovberg2021variable,solismartin2021stacked}.
+Those RMSE or challenge-score results are not directly comparable to this
+study, because this study evaluates a binary warning for $\mathrm{RUL}\leq20$
+and chooses its decision threshold under a false-alert budget.
+
+Run-to-failure data also require a demanding baseline. An engine's elapsed
+cycle number is associated with its remaining life by construction. If all
+engines failed at the same cycle, a clock-only rule could solve much of the
+task. The trajectories used here fail after different lifetimes, so cycle
+number is informative but not sufficient. A useful sensor result must exceed
+both the cycle-only and cycle-plus-operating-condition baselines.
+
+This paper first compares four information sets with the same fixed
+random-forest reference and the same nested engine-level evaluation: elapsed
+cycle only, cycle plus operating conditions, measured telemetry only, and all
+observable inputs. It then tests a small candidate set of tabular classifiers
+inside the outer-training folds to ask whether the warning policy can improve
+without using test-engine labels. The focus remains information value, not an
+architecture contest. The claim is narrow: in this simulated setting, the 14
+measured channels add final-window warning information beyond elapsed cycle and
+recorded operating conditions. The experiment does not establish an aircraft
+maintenance schedule.

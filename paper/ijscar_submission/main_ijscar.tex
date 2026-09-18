@@ -1,0 +1,74 @@
+\documentclass[10pt]{article}
+
+% XeLaTeX-only fonts
+\usepackage{fontspec}
+\usepackage{unicode-math}
+
+\usepackage[margin=0.75in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{microtype}
+\usepackage{authblk}
+\usepackage[section]{placeins}
+\usepackage{titlesec}
+
+\graphicspath{{../figures/}}
+
+% IJSCAR compact single-column layout. The original manuscript is preserved
+% outside this submission folder; these settings keep the submitted article
+% within the journal's 10-page body limit without changing the results.
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1em}
+\setlength{\emergencystretch}{2em}
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\floatsep}{5pt plus 2pt minus 2pt}
+\setlength{\intextsep}{5pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{0pt}
+\renewcommand{\arraystretch}{0.92}
+\titlespacing*{\section}{0pt}{8pt plus 2pt minus 2pt}{4pt}
+\titlespacing*{\subsection}{0pt}{6pt plus 2pt minus 2pt}{3pt}
+\titlespacing*{\subsubsection}{0pt}{4pt plus 1pt minus 1pt}{2pt}
+
+\hypersetup{
+  pdftitle={Beyond Cycle Count: Sensor-Based Maintenance Warnings for Simulated Turbofan Engines},
+  pdfauthor={Prahalad Talur},
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue
+}
+
+\title{Beyond Cycle Count:\\
+Sensor-Based Maintenance Warnings for Simulated Turbofan Engines}
+\author{Prahalad Talur\\
+\small Eastlake High School, Sammamish, Washington, USA\\
+\small \texttt{ptalur09@gmail.com}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\input{../sections/maintenance_abstract_intro}
+
+\input{../sections/maintenance_methods}
+
+\input{../sections/maintenance_results}
+
+\input{../sections/maintenance_discussion}
+
+\input{../sections/maintenance_conclusion}
+
+\begingroup
+\footnotesize
+\bibliographystyle{plain}
+\bibliography{../references}
+\endgroup
+
+\end{document}
