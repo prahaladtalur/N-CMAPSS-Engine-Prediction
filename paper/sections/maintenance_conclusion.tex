@@ -10,12 +10,14 @@ engine-cluster interval for the gain is 18.3 to 29.6 percentage points.
 
 The telemetry-only result is also useful. With no cycle number or
 operating-condition field, it recalls 77.1\% of final-window cycles and warns
-69 of 90 engines by the window start. These findings are stable across five
-random-forest seeds and use only the 14 documented measured channels. A
-secondary policy that selects its model family inside the training folds raises
-the all-observable result to AUROC 0.973 and recall 82.1\%, compared with 0.966
-and 79.3\% for the fixed random forest at the same pooled false-alert rate.
-This is a controlled performance gain, not a claim of a universally best model.
+69 of 90 engines by the window start in the primary run (seed 2026). Its
+cycle-level recall is stable across five random-forest seeds, ranging from
+77.1\% to 77.6\%; first-warning timing was not repeated across seeds. These
+results use only the 14 documented measured channels. A secondary policy that
+selects its model family inside the training folds raises the all-observable
+result to AUROC 0.973 and recall 82.1\%, compared with 0.966 and 79.3\% for the
+fixed random forest at the same pooled false-alert rate. This is a controlled
+performance gain, not a claim of a universally best model.
 
 The contribution is evidence that observed sensor telemetry carries
 maintenance-warning value beyond a flight-cycle clock in this simulator. It is

@@ -170,12 +170,19 @@ field. Positive lead values arrive before the final 20-cycle window begins.}
 \label{fig:warning-timing}
 \end{figure}
 
-\subsection{The conclusion is stable across model seeds}
+\subsection{Cycle-level metrics are stable across model seeds}
 
 Table~\ref{tab:seed-robustness} reports five complete nested evaluations with
 random-forest seeds 2024 through 2028. The seed ranges are narrow for each
 input. They do not replace external validation, because the simulated engines
 and the outer folds remain the same.
+
+Across the five seeds, the all-observable recall gain over cycle plus operating
+conditions ranges from 21.9 to 23.9 percentage points, with a mean of 22.6
+points. The paired 18.3-to-29.6-point interval reported for the primary run
+(seed 2026) captures uncertainty from resampling complete engines; it does
+not include model-seed variability. First-warning timing is reported for the
+primary run only and is not part of this seed-robustness check.
 
 \begin{table}[H]
 \centering
