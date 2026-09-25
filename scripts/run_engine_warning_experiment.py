@@ -42,7 +42,6 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import GroupKFold
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_REPOSITORY = "https://github.com/alovberg/tiny-N-CMAPSS"
 DATA_URLS = {
@@ -106,9 +105,7 @@ def ensure_data(data_dir: Path, allow_download: bool) -> dict[str, str]:
         actual = sha256(path)
         expected = EXPECTED_SHA256[name]
         if actual != expected:
-            raise ValueError(
-                f"Checksum mismatch for {path}. Expected {expected}, got {actual}."
-            )
+            raise ValueError(f"Checksum mismatch for {path}. Expected {expected}, got {actual}.")
         verified[name] = actual
     return verified
 
@@ -130,8 +127,10 @@ def build_cycle_table(train_path: Path) -> tuple[pd.DataFrame, list[str]]:
     # float32 prevents an overflow in group statistics for high-range channels.
     frame[sensor_columns] = frame[sensor_columns].astype("float32")
     grouped = frame.groupby(["unit", "cycle"], sort=True)
-    labels = grouped["RUL"].agg(["first", "nunique"]).rename(
-        columns={"first": "rul", "nunique": "label_count"}
+    labels = (
+        grouped["RUL"]
+        .agg(["first", "nunique"])
+        .rename(columns={"first": "rul", "nunique": "label_count"})
     )
     if int(labels["label_count"].max()) != 1:
         raise ValueError("RUL labels are inconsistent within an engine cycle.")
@@ -145,7 +144,9 @@ def build_cycle_table(train_path: Path) -> tuple[pd.DataFrame, list[str]]:
     return cycle_table, feature_columns
 
 
-def metric_record(y_true: np.ndarray, probability: np.ndarray, threshold: float) -> dict[str, float]:
+def metric_record(
+    y_true: np.ndarray, probability: np.ndarray, threshold: float
+) -> dict[str, float]:
     prediction = (probability >= threshold).astype(int)
     precision, recall, f1, _ = precision_recall_fscore_support(
         y_true, prediction, average="binary", zero_division=0
@@ -181,9 +182,7 @@ def engine_alerts(
     rows: list[dict[str, Any]] = []
     for unit, unit_rows in alerts.groupby("unit", sort=True):
         unit_rows = unit_rows.sort_values("cycle")
-        threshold_cycle = int(
-            unit_rows.loc[unit_rows["rul"] <= final_window_cycles, "cycle"].min()
-        )
+        threshold_cycle = int(unit_rows.loc[unit_rows["rul"] <= final_window_cycles, "cycle"].min())
         flags = unit_rows.loc[unit_rows["screen_alert"] == 1, "cycle"]
         first_alert = int(flags.min()) if not flags.empty else None
         lead = None if first_alert is None else int(threshold_cycle - first_alert)
@@ -208,9 +207,7 @@ def bootstrap_by_engine(
     seed: int,
 ) -> dict[str, list[float]]:
     """Return clustered 95% percentile intervals over held-out engine trajectories."""
-    target = (
-        cycle_table["rul"].to_numpy(dtype=float) <= final_window_cycles
-    ).astype(int)
+    target = (cycle_table["rul"].to_numpy(dtype=float) <= final_window_cycles).astype(int)
     units = cycle_table["unit"].to_numpy(dtype=int)
     unique_units = np.unique(units)
     positions = {unit: np.flatnonzero(units == unit) for unit in unique_units}
@@ -232,9 +229,7 @@ def bootstrap_by_engine(
         indices = np.concatenate([positions[int(unit)] for unit in sampled_units])
         metrics = metric_record(target[indices], probabilities[indices], threshold)
         results["final_window_recall"].append(metrics["final_window_recall"])
-        results["stable_region_false_alert_rate"].append(
-            metrics["stable_region_false_alert_rate"]
-        )
+        results["stable_region_false_alert_rate"].append(metrics["stable_region_false_alert_rate"])
         results["auroc"].append(metrics["auroc"])
         results["on_time_engine_screen_rate"].append(
             float(alerts.loc[sampled_units, "alert_at_or_before_final_window"].mean())
@@ -298,7 +293,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--download", action="store_true", help="Download verified public pickle files if absent.")
+    parser.add_argument(
+        "--download", action="store_true", help="Download verified public pickle files if absent."
+    )
     parser.add_argument("--final-window-cycles", type=float, default=20.0)
     parser.add_argument("--screening-threshold", type=float, default=0.5)
     parser.add_argument("--cv-folds", type=int, default=5)

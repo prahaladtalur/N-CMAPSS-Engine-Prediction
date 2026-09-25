@@ -45,7 +45,6 @@ from run_engine_warning_experiment import (
     ensure_data,
 )
 
-
 MEASURED_SENSOR_CHANNELS = [
     "T24",
     "T30",
@@ -94,8 +93,10 @@ def build_cycle_table(train_path: Path) -> tuple[pd.DataFrame, dict[str, list[st
     feature_columns = [*MEASURED_SENSOR_CHANNELS, *OPERATING_COLUMNS]
     frame[feature_columns] = frame[feature_columns].astype("float32")
     grouped = frame.groupby(["unit", "cycle"], sort=True)
-    labels = grouped["RUL"].agg(["first", "nunique"]).rename(
-        columns={"first": "rul", "nunique": "label_count"}
+    labels = (
+        grouped["RUL"]
+        .agg(["first", "nunique"])
+        .rename(columns={"first": "rul", "nunique": "label_count"})
     )
     if int(labels["label_count"].max()) != 1:
         raise ValueError("RUL labels vary within at least one engine cycle.")
@@ -168,7 +169,9 @@ def select_threshold_at_false_alert_budget(
     return threshold
 
 
-def metric_record(target: np.ndarray, probability: np.ndarray, alert: np.ndarray) -> dict[str, float]:
+def metric_record(
+    target: np.ndarray, probability: np.ndarray, alert: np.ndarray
+) -> dict[str, float]:
     """Compute cycle-level classification metrics for a fixed alert decision."""
     precision, recall, f1, _ = precision_recall_fscore_support(
         target, alert, average="binary", zero_division=0
@@ -191,16 +194,16 @@ def metric_record(target: np.ndarray, probability: np.ndarray, alert: np.ndarray
     }
 
 
-def first_alerts(cycle_table: pd.DataFrame, alert: np.ndarray, final_window_cycles: float) -> pd.DataFrame:
+def first_alerts(
+    cycle_table: pd.DataFrame, alert: np.ndarray, final_window_cycles: float
+) -> pd.DataFrame:
     """Return the first warning timing for each engine trajectory."""
     frame = cycle_table[["unit", "cycle", "rul"]].copy()
     frame["maintenance_warning"] = alert.astype(int)
     rows: list[dict[str, Any]] = []
     for unit, unit_rows in frame.groupby("unit", sort=True):
         unit_rows = unit_rows.sort_values("cycle")
-        window_start = int(
-            unit_rows.loc[unit_rows["rul"] <= final_window_cycles, "cycle"].min()
-        )
+        window_start = int(unit_rows.loc[unit_rows["rul"] <= final_window_cycles, "cycle"].min())
         warnings = unit_rows.loc[unit_rows["maintenance_warning"] == 1, "cycle"]
         first_warning = int(warnings.min()) if not warnings.empty else None
         lead = None if first_warning is None else int(window_start - first_warning)
@@ -245,9 +248,7 @@ def clustered_intervals(
         metric = metric_record(target[sample_index], probability[sample_index], alert[sample_index])
         values["precision"].append(metric["precision"])
         values["final_window_recall"].append(metric["final_window_recall"])
-        values["stable_region_false_alert_rate"].append(
-            metric["stable_region_false_alert_rate"]
-        )
+        values["stable_region_false_alert_rate"].append(metric["stable_region_false_alert_rate"])
         values["auroc"].append(metric["auroc"])
         values["on_time_engine_warning_rate"].append(
             float(alert_lookup.loc[sampled_units, "warning_at_or_before_final_window"].mean())
@@ -297,8 +298,7 @@ def paired_model_difference_intervals(
             physical["final_window_recall"] - operating["final_window_recall"]
         )
         values["stable_region_false_alert_rate_difference"].append(
-            physical["stable_region_false_alert_rate"]
-            - operating["stable_region_false_alert_rate"]
+            physical["stable_region_false_alert_rate"] - operating["stable_region_false_alert_rate"]
         )
     return {
         key: [float(np.quantile(sample, 0.025)), float(np.quantile(sample, 0.975))]
@@ -324,9 +324,7 @@ def nested_group_evaluation(
     fold_by_row = np.zeros(len(cycle_table), dtype=int)
     fold_rows: list[dict[str, Any]] = []
     outer = GroupKFold(n_splits=outer_folds)
-    for outer_fold, (outer_train, outer_test) in enumerate(
-        outer.split(X, target, groups), start=1
-    ):
+    for outer_fold, (outer_train, outer_test) in enumerate(outer.split(X, target, groups), start=1):
         inner_X = X[outer_train]
         inner_target = target[outer_train]
         inner_groups = groups[outer_train]
@@ -335,9 +333,7 @@ def nested_group_evaluation(
         for inner_train, inner_test in inner.split(inner_X, inner_target, inner_groups):
             inner_model = make_model(seed)
             inner_model.fit(inner_X[inner_train], inner_target[inner_train])
-            inner_probability[inner_test] = inner_model.predict_proba(
-                inner_X[inner_test]
-            )[:, 1]
+            inner_probability[inner_test] = inner_model.predict_proba(inner_X[inner_test])[:, 1]
         threshold = select_threshold_at_false_alert_budget(
             inner_target,
             inner_probability,
@@ -391,9 +387,7 @@ def write_outputs(
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "results.json").write_text(json.dumps(results, indent=2) + "\n")
-    physical_prediction_rows.to_csv(
-        output_dir / "physical_sensor_oof_predictions.csv", index=False
-    )
+    physical_prediction_rows.to_csv(output_dir / "physical_sensor_oof_predictions.csv", index=False)
     physical_alerts.to_csv(output_dir / "physical_sensor_engine_warnings.csv", index=False)
     pd.DataFrame(physical_fold_metrics).to_csv(
         output_dir / "physical_sensor_fold_metrics.csv", index=False
@@ -472,9 +466,7 @@ def main() -> None:
         raise ValueError("--outer-folds exceeds engine count.")
     if args.inner_folds > engine_count - engine_count // args.outer_folds:
         raise ValueError("--inner-folds exceeds outer-training engine count.")
-    print(
-        f"Prepared {len(cycle_table)} engine-cycle rows from {engine_count} simulated engines."
-    )
+    print(f"Prepared {len(cycle_table)} engine-cycle rows from {engine_count} simulated engines.")
     physical = nested_group_evaluation(
         cycle_table,
         feature_sets["physical_sensor_summaries"],
@@ -504,9 +496,7 @@ def main() -> None:
         args.final_window_cycles,
     )
     warned = physical_alerts.dropna(subset=["lead_cycles"])
-    on_time_engines = int(
-        physical_alerts["warning_at_or_before_final_window"].sum()
-    )
+    on_time_engines = int(physical_alerts["warning_at_or_before_final_window"].sum())
     bootstrap = clustered_intervals(
         cycle_table,
         physical["prediction_rows"]["risk_probability"].to_numpy(dtype=float),
@@ -547,9 +537,7 @@ def main() -> None:
         "dataset": {
             "simulated_engines": engine_count,
             "engine_cycles": int(len(cycle_table)),
-            "positive_engine_cycles": int(
-                (cycle_table["rul"] <= args.final_window_cycles).sum()
-            ),
+            "positive_engine_cycles": int((cycle_table["rul"] <= args.final_window_cycles).sum()),
         },
         "protocol": {
             "task": "Warn when a simulated engine cycle is in the final RUL window.",
@@ -613,8 +601,7 @@ def main() -> None:
         "physical_minus_operating": {
             "auroc_difference": float(physical_metrics["auroc"] - operating_metrics["auroc"]),
             "final_window_recall_difference": float(
-                physical_metrics["final_window_recall"]
-                - operating_metrics["final_window_recall"]
+                physical_metrics["final_window_recall"] - operating_metrics["final_window_recall"]
             ),
             "stable_region_false_alert_rate_difference": float(
                 physical_metrics["stable_region_false_alert_rate"]

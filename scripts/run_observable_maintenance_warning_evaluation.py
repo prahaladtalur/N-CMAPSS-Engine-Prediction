@@ -39,7 +39,6 @@ from run_maintenance_warning_evaluation import (
     paired_model_difference_intervals,
 )
 
-
 SOURCE_COMMIT = "b915997ff8d571f4e9d091954d6556835f212ded"
 PROJECT_REPOSITORY = "https://github.com/prahaladtalur/N-CMAPSS-Engine-Prediction"
 
@@ -67,7 +66,9 @@ def json_dump(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
-def numeric_summary(rows: list[dict[str, float]], metric_names: list[str]) -> dict[str, dict[str, float]]:
+def numeric_summary(
+    rows: list[dict[str, float]], metric_names: list[str]
+) -> dict[str, dict[str, float]]:
     summary: dict[str, dict[str, float]] = {}
     for metric in metric_names:
         values = np.asarray([row[metric] for row in rows], dtype=float)
@@ -89,9 +90,7 @@ def engine_summary(alerts: pd.DataFrame) -> dict[str, float | int]:
         "on_time_engines": on_time,
         "on_time_rate": float(on_time / len(alerts)),
         "eventually_warned_engines": int(len(warned)),
-        "never_warned_engines": int(
-            alerts["first_maintenance_warning_cycle"].isna().sum()
-        ),
+        "never_warned_engines": int(alerts["first_maintenance_warning_cycle"].isna().sum()),
         "median_lead_cycles": float(np.median(lead_values)) if len(lead_values) else float("nan"),
         "mean_lead_cycles": float(np.mean(lead_values)) if len(lead_values) else float("nan"),
         "minimum_lead_cycles": int(np.min(lead_values)) if len(lead_values) else 0,
@@ -143,9 +142,7 @@ def evaluate_variant(
             {
                 "outer_fold": int(row["outer_fold"]),
                 "threshold": float(row["selected_threshold"]),
-                "inner_oof_false_alert_rate": float(
-                    row["inner_oof_false_alert_rate"]
-                ),
+                "inner_oof_false_alert_rate": float(row["inner_oof_false_alert_rate"]),
             }
             for row in evaluation["fold_metrics"]
         ],
@@ -196,7 +193,9 @@ def seed_robustness(
                     seed,
                 )
                 metrics = evaluation["pooled_metrics"]
-            rows.append({"seed": int(seed), **{metric: float(metrics[metric]) for metric in metric_names}})
+            rows.append(
+                {"seed": int(seed), **{metric: float(metrics[metric]) for metric in metric_names}}
+            )
         output[name] = {
             "metric_by_seed": rows,
             "summary": numeric_summary(rows, metric_names),
@@ -326,9 +325,7 @@ def main() -> None:
     if set(VARIANTS) - set(feature_sets):
         raise RuntimeError("One or more expected feature sets were not built.")
 
-    print(
-        f"Prepared {len(cycle_table)} engine-cycle rows from {engine_count} simulated engines."
-    )
+    print(f"Prepared {len(cycle_table)} engine-cycle rows from {engine_count} simulated engines.")
     runs: dict[str, dict[str, Any]] = {}
     for name in VARIANTS:
         runs[name] = evaluate_variant(name, cycle_table, feature_sets[name], args)
@@ -344,12 +341,15 @@ def main() -> None:
         .groupby("unit", sort=True)["total_life"]
         .first()
     )
-    if int(
-        cycle_table.assign(total_life=cycle_table["cycle"] + cycle_table["rul"])
-        .groupby("unit")["total_life"]
-        .nunique()
-        .max()
-    ) != 1:
+    if (
+        int(
+            cycle_table.assign(total_life=cycle_table["cycle"] + cycle_table["rul"])
+            .groupby("unit")["total_life"]
+            .nunique()
+            .max()
+        )
+        != 1
+    ):
         raise RuntimeError("RUL plus cycle is not constant within every engine.")
     raw_readings = int(len(pd.read_pickle(args.data_dir / "train_df.pkl")))
     target = (cycle_table["rul"].to_numpy(dtype=float) <= args.final_window_cycles).astype(int)

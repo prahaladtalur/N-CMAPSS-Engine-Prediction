@@ -46,7 +46,6 @@ from run_maintenance_warning_evaluation import (
     select_threshold_at_false_alert_budget,
 )
 
-
 ModelFactory = Callable[[int], Any]
 
 
@@ -139,15 +138,16 @@ def select_model_from_inner_oof(
     """
     records: list[dict[str, Any]] = []
     for name, probability in candidate_probability.items():
-        threshold = select_threshold_at_false_alert_budget(
-            target, probability, false_alert_budget
-        )
+        threshold = select_threshold_at_false_alert_budget(target, probability, false_alert_budget)
         metrics = metric_record(target, probability, probability >= threshold)
         records.append(
             {
                 "candidate": name,
                 "selected_threshold": float(threshold),
-                **{key: float(value) if isinstance(value, np.floating) else value for key, value in metrics.items()},
+                **{
+                    key: float(value) if isinstance(value, np.floating) else value
+                    for key, value in metrics.items()
+                },
             }
         )
     winner = max(
@@ -184,15 +184,11 @@ def nested_selected_evaluation(
     inner_rows: list[dict[str, Any]] = []
     factories = candidate_factories()
     outer = GroupKFold(n_splits=outer_folds)
-    for outer_fold, (outer_train, outer_test) in enumerate(
-        outer.split(X, target, groups), start=1
-    ):
+    for outer_fold, (outer_train, outer_test) in enumerate(outer.split(X, target, groups), start=1):
         inner_X = X[outer_train]
         inner_target = target[outer_train]
         inner_groups = groups[outer_train]
-        inner_probability = {
-            name: np.zeros(len(outer_train), dtype=float) for name in factories
-        }
+        inner_probability = {name: np.zeros(len(outer_train), dtype=float) for name in factories}
         inner = GroupKFold(n_splits=inner_folds)
         for inner_fold, (inner_train, inner_test) in enumerate(
             inner.split(inner_X, inner_target, inner_groups), start=1
@@ -200,9 +196,7 @@ def nested_selected_evaluation(
             for candidate_index, (name, factory) in enumerate(factories.items(), start=1):
                 model = factory(seed + 10_000 * outer_fold + 100 * inner_fold + candidate_index)
                 model.fit(inner_X[inner_train], inner_target[inner_train])
-                inner_probability[name][inner_test] = model.predict_proba(
-                    inner_X[inner_test]
-                )[:, 1]
+                inner_probability[name][inner_test] = model.predict_proba(inner_X[inner_test])[:, 1]
         selected_model, threshold, selection_records = select_model_from_inner_oof(
             inner_target, inner_probability, false_alert_budget
         )
@@ -274,9 +268,7 @@ def metrics_by_seed(
                 "auroc": float(metric["auroc"]),
                 "precision": float(metric["precision"]),
                 "final_window_recall": float(metric["final_window_recall"]),
-                "stable_region_false_alert_rate": float(
-                    metric["stable_region_false_alert_rate"]
-                ),
+                "stable_region_false_alert_rate": float(metric["stable_region_false_alert_rate"]),
                 "selection_frequency": evaluation["selection_frequency"],
             }
         )
@@ -396,9 +388,13 @@ def main() -> None:
                 "engine_count": int(len(alerts)),
                 "on_time_engines": int(alerts["warning_at_or_before_final_window"].sum()),
                 "on_time_rate": float(alerts["warning_at_or_before_final_window"].mean()),
-                "eventually_warned_engines": int(alerts["first_maintenance_warning_cycle"].notna().sum()),
+                "eventually_warned_engines": int(
+                    alerts["first_maintenance_warning_cycle"].notna().sum()
+                ),
                 "never_warned_engines": int(alerts["first_maintenance_warning_cycle"].isna().sum()),
-                "median_lead_cycles": float(alerts.dropna(subset=["lead_cycles"])["lead_cycles"].median()),
+                "median_lead_cycles": float(
+                    alerts.dropna(subset=["lead_cycles"])["lead_cycles"].median()
+                ),
             },
             "selection_frequency": primary["selection_frequency"],
             "fold_metrics": primary["fold_metrics"],
@@ -409,10 +405,20 @@ def main() -> None:
             "fold_metrics": reference["fold_metrics"],
         },
         "selected_policy_minus_fixed_random_forest": {
-            "auroc_difference": float(primary["pooled_metrics"]["auroc"] - reference["pooled_metrics"]["auroc"]),
-            "precision_difference": float(primary["pooled_metrics"]["precision"] - reference["pooled_metrics"]["precision"]),
-            "final_window_recall_difference": float(primary["pooled_metrics"]["final_window_recall"] - reference["pooled_metrics"]["final_window_recall"]),
-            "stable_region_false_alert_rate_difference": float(primary["pooled_metrics"]["stable_region_false_alert_rate"] - reference["pooled_metrics"]["stable_region_false_alert_rate"]),
+            "auroc_difference": float(
+                primary["pooled_metrics"]["auroc"] - reference["pooled_metrics"]["auroc"]
+            ),
+            "precision_difference": float(
+                primary["pooled_metrics"]["precision"] - reference["pooled_metrics"]["precision"]
+            ),
+            "final_window_recall_difference": float(
+                primary["pooled_metrics"]["final_window_recall"]
+                - reference["pooled_metrics"]["final_window_recall"]
+            ),
+            "stable_region_false_alert_rate_difference": float(
+                primary["pooled_metrics"]["stable_region_false_alert_rate"]
+                - reference["pooled_metrics"]["stable_region_false_alert_rate"]
+            ),
             "bootstrap_95pct_ci": comparison,
         },
         "seed_robustness": {"metric_by_seed": robustness, "summary": summary},
